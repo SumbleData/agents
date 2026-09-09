@@ -33,20 +33,20 @@ A skill is just a folder of instructions your coding agent reads. There are a fe
 If you have `npx` (it ships with [Node.js](https://nodejs.org)), one command installs the skill into whichever agents you choose:
 
 ```bash
-npx skills add SumbleData/sumble-skills-public --skill sumble-account-scoring
+npx skills add SumbleData/agents --skill sumble-account-scoring
 ```
 
 The installer detects your coding agents and asks where to install. For a no-prompt global install into one agent, add `-g -a claude-code -y`, `-g -a codex -y`, or the matching agent name.
 
 No `npx` or git? Install it by hand:
 
-1. Download the skills repo as a ZIP (no git needed): [github.com/SumbleData/sumble-skills-public → Code → Download ZIP](https://github.com/SumbleData/sumble-skills-public/archive/refs/heads/main.zip), then unzip it.
+1. Download the skills repo as a ZIP (no git needed): [github.com/SumbleData/agents → Code → Download ZIP](https://github.com/SumbleData/agents/archive/refs/heads/main.zip), then unzip it.
 2. Copy the `skills/sumble-account-scoring` folder into your agent's skills directory (`~` is your home folder; create the directory if it doesn't exist):
    - **Claude Code:** `~/.claude/skills/sumble-account-scoring`
    - **OpenAI Codex:** `~/.codex/skills/sumble-account-scoring`
    - **Cursor:** `~/.cursor/skills/sumble-account-scoring`
 
-On the Claude desktop app you don't need `npx` or git: start a new chat and ask Claude to install the `sumble-account-scoring` skill from [github.com/SumbleData/sumble-skills-public](https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-account-scoring) and it saves the skill for you. You can also add it by hand under **Settings → Capabilities → Skills**.
+On the Claude desktop app you don't need `npx` or git: start a new chat and ask Claude to install the `sumble-account-scoring` skill from [github.com/SumbleData/agents](https://github.com/SumbleData/agents/tree/main/skills/sumble-account-scoring) and it saves the skill for you. You can also add it by hand under **Settings → Capabilities → Skills**.
 
 Whichever route you take, start a **new agent session** so the skill is picked up, then run it: on Claude Code type `/sumble-account-scoring`; on Codex, Cursor, or the Claude desktop app, ask it to use the sumble-account-scoring skill.
 
@@ -286,7 +286,7 @@ These coding agents are just chat apps that can run commands and edit files on y
 2. **Install Python 3.10+** (only needed to run the finished app). On a Mac it's usually already installed: open Terminal and run `python3 --version`. Otherwise grab it from [python.org](https://python.org).
 3. **Install the skill** with `npx skills`:
    ```bash
-   npx skills add SumbleData/sumble-skills-public --skill sumble-account-scoring
+   npx skills add SumbleData/agents --skill sumble-account-scoring
    ```
    The installer detects your coding agents and asks where to install. For a no-prompt global install into one agent, add `-g -a claude-code -y`, `-g -a codex -y`, or the matching agent name. No `npx` (or no git)? Step 1 above shows the manual install: download the repo ZIP and copy the `skills/sumble-account-scoring` folder into your agent's skills directory.
 4. **Have your account list ready** (recommended): a spreadsheet saved as a `.csv` with at least `name` and `domain` columns, plus, if you can, a column flagging your **customers** and one for the **account owner / rep**.

@@ -82,7 +82,7 @@ you never download anything. In Claude Desktop, web, mobile, or Cowork, open
 from a repository**, and enter:
 
 ```
-SumbleData/sumble-skills-public
+SumbleData/agents
 ```
 
 Install the plugins you want, then open the marketplace's **...** menu and turn
@@ -91,7 +91,7 @@ on **Sync**, so later changes to a skill reach you without a reinstall.
 Claude Code does the same from the terminal:
 
 ```bash
-claude plugin marketplace add SumbleData/sumble-skills-public
+claude plugin marketplace add SumbleData/agents
 claude plugin install sumble-account-research@sumble
 ```
 
@@ -106,35 +106,35 @@ Run one command for the skill you want. The `skills` CLI detects supported
 agents and installs into the agent you choose.
 
 ```bash
-npx skills add SumbleData/sumble-skills-public --skill sumble-mcp
-npx skills add SumbleData/sumble-skills-public --skill sumble-account-scoring
-npx skills add SumbleData/sumble-skills-public --skill sumble-people-scoring
-npx skills add SumbleData/sumble-skills-public --skill sumble-direct-mail-audience
-npx skills add SumbleData/sumble-skills-public --skill sumble-territory-planning
+npx skills add SumbleData/agents --skill sumble-mcp
+npx skills add SumbleData/agents --skill sumble-account-scoring
+npx skills add SumbleData/agents --skill sumble-people-scoring
+npx skills add SumbleData/agents --skill sumble-direct-mail-audience
+npx skills add SumbleData/agents --skill sumble-territory-planning
 ```
 
 To install globally for a specific agent without prompts, add `-g -a <agent>
 -y`:
 
 ```bash
-npx skills add SumbleData/sumble-skills-public --skill sumble-mcp -g -a codex -y
-npx skills add SumbleData/sumble-skills-public --skill sumble-account-scoring -g -a claude-code -y
+npx skills add SumbleData/agents --skill sumble-mcp -g -a codex -y
+npx skills add SumbleData/agents --skill sumble-account-scoring -g -a claude-code -y
 ```
 
 List or install the whole repo:
 
 ```bash
-npx skills add SumbleData/sumble-skills-public --list
-npx skills add SumbleData/sumble-skills-public --skill '*'
+npx skills add SumbleData/agents --list
+npx skills add SumbleData/agents --skill '*'
 ```
 
 Direct GitHub path installs also work if you want each skill to have its own
 URL-shaped command:
 
 ```bash
-npx skills add https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-mcp
-npx skills add https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-account-scoring
-npx skills add https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-people-scoring
+npx skills add https://github.com/SumbleData/agents/tree/main/skills/sumble-mcp
+npx skills add https://github.com/SumbleData/agents/tree/main/skills/sumble-account-scoring
+npx skills add https://github.com/SumbleData/agents/tree/main/skills/sumble-people-scoring
 ```
 
 Start a new agent session after installing. In Codex, ask it to *"use the
@@ -151,7 +151,7 @@ run `/sumble-account-scoring`, `/sumble-people-scoring`,
 automatically on every push to `main` (see
 `.github/workflows/build-skill-zips.yml`):
 
-- [sumble-account-research.zip](https://github.com/SumbleData/sumble-skills-public/releases/download/skill-zips/sumble-account-research.zip)
+- [sumble-account-research.zip](https://github.com/SumbleData/agents/releases/download/skill-zips/sumble-account-research.zip)
 
 ## How a skill runs
 

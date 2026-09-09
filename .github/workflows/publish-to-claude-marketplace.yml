@@ -96,14 +96,14 @@ jobs:
           branch="sync/skills-${SOURCE_SHA::7}"
           git checkout -b "$branch"
           git add -A
-          git commit -m "Sync skills from sumble-skills-public@${SOURCE_SHA::7}"
+          git commit -m "Sync skills from SumbleData/agents@${SOURCE_SHA::7}"
           git push --force origin "$branch"
 
           gh pr create \
             --repo "$MARKETPLACE_REPO" \
             --head "$branch" \
-            --title "Sync skills from sumble-skills-public@${SOURCE_SHA::7}" \
-            --body "Automated vendor of \`skills/\` from sumble-skills-public. Merging this triggers the Claude organization marketplace sync." \
+            --title "Sync skills from SumbleData/agents@${SOURCE_SHA::7}" \
+            --body "Automated vendor of \`skills/\` from SumbleData/agents. Merging this triggers the Claude organization marketplace sync." \
             || echo "PR already exists for $branch"
 
           # Auto-merge so the sync fires without a human in the loop. Swap for

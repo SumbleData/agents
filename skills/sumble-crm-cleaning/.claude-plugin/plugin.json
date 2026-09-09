@@ -6,7 +6,7 @@
     "name": "Sumble",
     "url": "https://sumble.com"
   },
-  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-crm-cleaning",
-  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "homepage": "https://github.com/SumbleData/agents/tree/main/skills/sumble-crm-cleaning",
+  "repository": "https://github.com/SumbleData/agents",
   "license": "MIT"
 }

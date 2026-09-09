@@ -43,7 +43,7 @@ EXCLUDE_FILES = {".DS_Store"}
 # internal marketplace and later follows the public install instructions would
 # lose it.
 MARKETPLACE_NAME = "sumble-internal"
-MARKETPLACE_DESCRIPTION = "Sumble's GTM skills, vendored from sumble-skills-public for the Sumble organization."
+MARKETPLACE_DESCRIPTION = "Sumble's GTM skills, vendored from SumbleData/agents for the Sumble organization."
 OWNER = {"name": "Sumble", "url": "https://sumble.com"}
 
 

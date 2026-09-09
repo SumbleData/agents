@@ -38,7 +38,7 @@ Two consequences worth knowing up front:
 You'll need a **Sumble API key** ([sumble.com/account](https://sumble.com/account)). Claude installs the skill straight from a repository; ChatGPT and Gemini need the `SKILL.md` text from the [`sumble-account-research`](../SKILL.md) skill.
 
 **Claude (desktop, web, mobile, or Cowork): the most complete path.**
-1. **Customize → Plugins → Personal**, press **+**, choose **Add marketplace → Add from a repository**, and enter `SumbleData/sumble-skills-public`. Install the **sumble-account-research** plugin. Nothing to download, and one marketplace covers every Sumble skill. *(Skills require a Pro, Team, or Enterprise plan; on Team/Enterprise an admin may need to enable them.)*
+1. **Customize → Plugins → Personal**, press **+**, choose **Add marketplace → Add from a repository**, and enter `SumbleData/agents`. Install the **sumble-account-research** plugin. Nothing to download, and one marketplace covers every Sumble skill. *(Skills require a Pro, Team, or Enterprise plan; on Team/Enterprise an admin may need to enable them.)*
 2. Open the marketplace's **...** menu and turn on **Sync**, so later improvements to the skill reach you without a reinstall.
 3. **Settings → Connectors → add the Sumble MCP** (its URL plus your API key). This is what lets the skill pull real data.
 4. In any chat, just ask: *"Use account research on Vanta"* or *"Help me pick which accounts in my territory to work."* Skills trigger on intent, on every surface above.

@@ -85,7 +85,7 @@ Stock Python 3.10+, no dependencies.
 You need a coding agent (**Claude Code**, **OpenAI Codex**, or **Cursor**), your CRM ownership (Salesforce, HubSpot, a warehouse, or a CSV with account, owner, and a size signal), and ideally an existing account-scoring run for the value column. Connect whatever activity sources you have — Google Calendar, Gong, Fireflies, Granola, Salesforce email — and Activation lights up; skip them and you still get balance and segment fit.
 
 ```bash
-npx skills add SumbleData/sumble-skills-public --skill sumble-territory-planning
+npx skills add SumbleData/agents --skill sumble-territory-planning
 ```
 
 Start a new agent session and run it (`/sumble-territory-planning` in Claude Code; "use the sumble-territory-planning skill" in Codex or Cursor). The interview sets your segments (Enterprise + Commercial by default), whether the segment line is a hard rule or should be calibrated from your data, and your target book size per segment. Then:

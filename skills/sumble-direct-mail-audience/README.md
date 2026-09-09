@@ -12,7 +12,7 @@ the app.
 ## Install the skill
 
 ```bash
-npx skills add SumbleData/sumble-skills-public --skill sumble-direct-mail-audience
+npx skills add SumbleData/agents --skill sumble-direct-mail-audience
 ```
 
 Start a new agent session and ask:

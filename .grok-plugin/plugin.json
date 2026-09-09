@@ -1,0 +1,9 @@
+{
+  "name": "sumble",
+  "description": "Sumble's official MCP server and GTM skills for Grok Build: research accounts and buying committees, track hiring and technology signals, and score, clean, and plan territories against your CRM.",
+  "author": { "name": "Sumble", "url": "https://sumble.com" },
+  "repository": "https://github.com/SumbleData/agents",
+  "homepage": "https://sumble.com/mcp",
+  "license": "MIT",
+  "keywords": ["sumble", "sumble-mcp", "sumble-api", "sumble-signals"]
+}

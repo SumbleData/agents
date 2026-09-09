@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sumble": {
+      "type": "http",
+      "url": "https://mcp.sumble.com",
+      "note": "Sumble's hosted MCP server. Sign in with your Sumble account in the browser on first connection (OAuth); there is no API key to paste and no local helper. Tools appear as sumble__<Tool>, for example sumble__FindMatchAndEnrichOrganizations."
+    }
+  }
+}

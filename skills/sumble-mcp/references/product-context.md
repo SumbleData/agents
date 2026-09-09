@@ -37,6 +37,7 @@ connection to `https://mcp.sumble.com`.
 | Claude | Paid plans | Install from the [Claude directory](https://claude.ai/directory/connectors/sumble) (recommended), or add a custom connector named `Sumble` with URL `https://mcp.sumble.com`. Enterprise users may need an admin to enable connectors. |
 | Cursor | All plans | Add an HTTP MCP server named `sumblemcp` with URL `https://mcp.sumble.com`. |
 | Claude Code | All plans | Run `claude mcp add --transport http sumble https://mcp.sumble.com --scope user`, then authenticate from `/mcp`. |
+| Grok Build | All plans | Install the `sumble` plugin from the built-in marketplace (`/marketplace`, or `grok plugin install sumble --trust`); it configures the MCP server. Or run `grok mcp add --transport http sumble https://mcp.sumble.com`. Either way, authenticate from `/mcps`. |
 | ChatGPT | Paid plans | Install from the [ChatGPT app directory](https://chatgpt.com/apps/sumble/asdk_app_69d6aed609708191a384fb6b59438690) (recommended), or create a custom app named `Sumble` with MCP server URL `https://mcp.sumble.com`. Enterprise users may need an admin to enable apps. |
 | Gemini | Not available | Do not claim Sumble MCP is available in Gemini. |
 

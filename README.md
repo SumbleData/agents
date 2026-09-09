@@ -65,7 +65,7 @@ flags are fictitious, opportunity counts removed).
 
 ## What you need
 
-- One of: **Claude Code**, **OpenAI Codex CLI**, or **Cursor**.
+- One of: **Claude Code**, **OpenAI Codex CLI**, **Cursor**, or **Grok Build**.
 - A **Sumble account with API access** — sign up at [sumble.com](https://sumble.com), then grab your key at [sumble.com/account](https://sumble.com/account).
 - The **Sumble MCP server** for skills that call it — [docs.sumble.com/api/mcp](https://docs.sumble.com/api/mcp). The direct-mail skill calls the public API directly and does not require MCP.
 - A **Parallel API key** for the direct-mail skill.
@@ -99,6 +99,30 @@ The plugin ids are the skill names: `sumble-account-research@sumble`,
 `sumble-account-scoring@sumble`, `sumble-crm-cleaning@sumble`,
 `sumble-direct-mail-audience@sumble`, `sumble-mcp@sumble`,
 `sumble-people-scoring@sumble`, `sumble-territory-planning@sumble`.
+
+### Grok Build
+
+Grok Build installs this whole repo as one plugin named `sumble`, listed in the
+[xAI plugin marketplace](https://github.com/xai-org/plugin-marketplace). The
+plugin brings all seven skills (each one is a slash command, for example
+`/sumble-mcp`) and configures the Sumble MCP server.
+
+Inside Grok Build, type `/marketplace`, select **sumble**, and press `i`. Or
+from the terminal:
+
+```bash
+grok plugin install sumble --trust
+```
+
+To install straight from this repo at an exact commit (no marketplace needed):
+
+```bash
+grok plugin install SumbleData/agents@<full commit sha> --trust
+```
+
+Then open `/mcps`, select **sumble**, press `i`, and sign in with your Sumble
+account in the browser. `--trust` is what activates the MCP server; without it
+Grok installs the files but leaves the server blocked.
 
 ### `npx skills`
 
@@ -199,6 +223,29 @@ The territory-planning method is written up in
 [`skills/sumble-territory-planning/articles/`](skills/sumble-territory-planning/articles):
 
 1. [Balance territories on value, not account counts](skills/sumble-territory-planning/articles/01-balance-territories-on-value-not-account-counts.md)
+
+## Network endpoints and credentials
+
+Everything these skills talk to, and the credential each one needs. Nothing
+here reads `~/.ssh`, unrelated `.env` entries, or sends telemetry, and the repo
+ships no hooks.
+
+| Endpoint | Used by | Credential | Where it comes from |
+|---|---|---|---|
+| `https://mcp.sumble.com` | The MCP server in `.mcp.json`; the `sumble-mcp` and `sumble-account-research` skills | OAuth sign-in with your Sumble account | Your MCP client's browser flow; the client stores the token (Grok Build: `~/.grok/mcp_credentials.json`) |
+| `https://api.sumble.com` | The `_build/` scripts and portable scorers in account scoring, CRM cleaning, people scoring and territory planning; the direct-mail app | Sumble API key from [sumble.com/account](https://sumble.com/account), sent as `Authorization: Bearer` | `SUMBLE_API_KEY`, or `--env-file`, or a key file (`SUMBLE_API_KEY_FILE`, else `~/.config/sumble/api_key`, mode 0600), else a terminal prompt that saves to that file. `--key-cmd` runs a command you supply (for example a password manager) and uses its output as the key. `SUMBLE_API_BASE` (`SUMBLE_API_BASE_URL` for direct mail) points the scripts at another host; leave it unset. |
+| `https://api.parallel.ai` | Direct mail (required); account scoring's optional whitespace filter with `--provider parallel` | Parallel API key | `PARALLEL_API_KEY` |
+| `https://api.anthropic.com`, `https://api.openai.com`, `https://generativelanguage.googleapis.com`, `https://api.exa.ai` | Account scoring's optional whitespace filter only, one provider chosen with `--provider` | That provider's API key | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `EXA_API_KEY` |
+| `https://geocoding.geo.census.gov` | Direct mail, to geocode office addresses | None | |
+| PyPI, through `uv sync --locked` | Direct mail only; versions pinned in `uv.lock` | None | |
+
+The generated apps listen on localhost only (port 8001, 8002 or 2718; `PORT`
+overrides it). The account-scoring and territory-planning apps accept optional
+`BASIC_AUTH_USER` and `BASIC_AUTH_PASS` for when you host one for a team.
+
+Sumble's [privacy policy](https://sumble.com/privacy) and
+[terms of service](https://sumble.com/terms-of-service) cover the data these
+endpoints return. Questions: [support@sumble.com](mailto:support@sumble.com).
 
 ## License
 

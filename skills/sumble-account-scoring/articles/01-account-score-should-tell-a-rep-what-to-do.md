@@ -1,11 +1,10 @@
 # Account Scoring Should Explain, Not Just Rank
 
+*Part 1 of a two-part guide. Part 2 — [A step by step guide to world class account scoring in under two hours](02-build-an-account-score-you-can-prospect-from.md) — turns this into a working model in an afternoon.*
+
 Most account scores spit out a number. The best ones explain why an account matters and what the first move should be.
 
 **Skill:** [`sumble-account-scoring`](../SKILL.md). Run it in Claude Code, Codex, or Cursor.
-
-*Part 1 of 2.* Part 2 — [A step by step guide to world class account scoring in under two hours](02-build-an-account-score-you-can-prospect-from.md).
-
 
 ## TLDR
 - Show reps the rank and the linked evidence, not just the raw score.
@@ -14,7 +13,6 @@ Most account scores spit out a number. The best ones explain why an account matt
 - Be wary of attributes that don't cover the whole corpus: funding data only exists for venture-backed companies, so scoring it artificially boosts startups.
 - Calibrate your scores against closed-won accounts (or a subset of accounts that are a strong ICP fit).
 - Use the same model to find whitespace accounts: strong-fit companies not yet in your CRM.
-
 
 Most account scores get ignored. They're either a proxy for company size or a black-box number. Reps tune out the first because it says nothing new, and the second because they can't see why an account got an 82.
 
@@ -69,7 +67,7 @@ Same account ([Walmart](https://sumble.com/orgs/walmart)) scored with 2 differen
 | Concentration | Software Engineer | 6.2% of staff |
 | Concentration | AI Engineer | 0.07% of staff |
 
-Bias towards attributes that reps can understand and take action on. Some examples: 
+Bias towards attributes that reps can understand and take action on. Some examples:
 
 - **People**: how many of your target personas work there, what share of the company they make up, and whether that function is growing.
 - **Technology**: how many of their teams use competitive and complementary technologies.
@@ -79,7 +77,7 @@ When Sumble provides these attributes we also offer a **deep link**, so the scor
 
 ## Avoid having your model purely proxy company size
 
-Enterprises have more of everything, so a model built on raw counts is a headcount ranking in disguise. A few fixes keep size from dominating. 
+Enterprises have more of everything, so a model built on raw counts is a headcount ranking in disguise. A few fixes keep size from dominating.
 
 If your sweet spot is small but fast-growing, weight the growth attributes heavily, above all growth in your ICP personas. Fast-growing companies cross new scale points often, and each scale point is a moment they outgrow a tool and go looking for a new one, which makes them likely buyers of a modern solution. Lean on growth metrics here and the right accounts pop to the top: a company like Anthropic (~4K employees) can be every bit as compelling as a Walmart (2MM employees). On the flip side, a company that isn't growing often isn't in pain, because it isn't hitting the limits that trigger a change, so a big, static account can be a worse bet than a smaller one accelerating into your category.
 
@@ -93,9 +91,7 @@ The best attributes are ones every account could have a value for. If an attribu
 
 Funding is the classic example. Funding data only exists for venture-backed companies: bootstrapped businesses, PE-owned companies, subsidiaries, and public companies all read as zero. Score "total raised" and every venture-backed startup gets an artificial boost, while everyone else is penalized for a data gap, not a fit gap. And what funding is meant to indicate (fresh budget, an imminent hiring ramp) often shows up in attributes that do cover everyone, such as headcount growth.
 
-
 ## Break the score into segments you can read
-
 
 "Is this a good account?" hides several different questions, and the score is far more legible when its top level breaks them apart. We default to three **segments**, each answering one question, blended into a single number you can still take apart:
 
@@ -105,8 +101,7 @@ Funding is the classic example. Funding data only exists for venture-backed comp
 
 Reps get one number to act on; anyone who asks can see the three lenses behind it, weighted ~50/30/20 (size / growth & momentum / concentration). That's a default starting point; the model calibrates it to your won deals, and you can adjust it yourself.
 
-The segments are yours to redefine: rename them, reweight them, or cut them a different way entirely. The most useful alternative is a business-unit breakdown: if you sell distinct product lines, give each its own segment (for Oracle, an OCI-fit segment and an Apps-fit segment, each with its own personas and technologies) and read a per-line score inside the same model. 
-
+The segments are yours to redefine: rename them, reweight them, or cut them a different way entirely. The most useful alternative is a business-unit breakdown: if you sell distinct product lines, give each its own segment (for Oracle, an OCI-fit segment and an Apps-fit segment, each with its own personas and technologies) and read a per-line score inside the same model.
 
 ## Calibrate against the deals you've won
 
@@ -130,10 +125,9 @@ And if scoring is a daily job, it becomes one less thing to worry about. A score
 
 ## Use the same model to find whitespace accounts
 
-The model you calibrate against your CRM is really a description of what your best customers look like, and nothing about that description limits it to accounts you already have. Turn it around and the same weights surface the companies that look like your customers but aren't in your CRM yet. That's whitespace, and it comes almost for free. A company you've never engaged has no first-party attributes to join, so whitespace runs the Sumble-only half of your model (same normalization, same calibration multipliers, weights re-normalized over what's left) across Sumble's whole universe, then subtracts the accounts you already own. 
+The model you calibrate against your CRM is really a description of what your best customers look like, and nothing about that description limits it to accounts you already have. Turn it around and the same weights surface the companies that look like your customers but aren't in your CRM yet. That's whitespace, and it comes almost for free. A company you've never engaged has no first-party attributes to join, so whitespace runs the Sumble-only half of your model (same normalization, same calibration multipliers, weights re-normalized over what's left) across Sumble's whole universe, then subtracts the accounts you already own.
 
 This is why it beats a bought "lookalike" list. A purchased list is firmographics, the company-at-rest description this method warns against. Whitespace is built on your own won deals and on what companies are doing right now, and it's the same model you already watched sort your known customers to the top. Each account it surfaces lands with the people and the reasons to reach out already attached.
-
 
 ## The score is the start, not the end
 

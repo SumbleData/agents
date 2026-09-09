@@ -1,8 +1,8 @@
 # A step by step guide to world class account scoring in under two hours
 
-**Skill:** [`sumble-account-scoring`](../SKILL.md). Run it in Claude Code, Codex, or Cursor.
+*Part 2 of a two-part guide. Start with [Part 1 — Account Scoring Should Explain, Not Just Rank](01-account-score-should-tell-a-rep-what-to-do.md) for the why behind the method.*
 
-*Part 2 of 2.* Part 1 — [Account Scoring Should Explain, Not Just Rank](01-account-score-should-tell-a-rep-what-to-do.md) — lays out the method; this is how to put it in action.
+**Skill:** [`sumble-account-scoring`](../SKILL.md). Run it in Claude Code, Codex, or Cursor.
 
 ## TLDR
 - The skill interviews you about personas, technologies, projects, and first-party attributes.
@@ -10,7 +10,7 @@
 - Every attribute deep-links back into Sumble, so reps can move from rank to people, teams, jobs, and talking points.
 - When you save, you get portable JSON weights and a scorer you can run against your whole book.
 
-Part 1 argued that a good account score is the start of a prospecting conversation: every number backed by people and teams a rep can see and act on. This guide shows how to build one against your own ICP using the Sumble account-scoring skill, which runs in Claude Code, Codex, or Cursor. One skill, three objectives: score the accounts in your CRM, find whitespace (strong-fit orgs you don't yet have), or both in one ranked sheet. You talk to it, it pulls the data, it calibrates to your closed-won, and you tune with sliders. Zero-dependency Python: if `python app.py` runs, you're done.
+Part 1 argued that a good account score is the start of a prospecting conversation: every number backed by people and teams a rep can see and act on. This guide shows how to build one against your own ICP using the [Sumble account-scoring skill](../SKILL.md), which runs in Claude Code, Codex, or Cursor. One skill, three objectives: score the accounts in your CRM, find whitespace (strong-fit orgs you don't yet have), or both in one ranked sheet. You talk to it, it pulls the data, it calibrates to your closed-won, and you tune with sliders. Zero-dependency Python: if `python app.py` runs, you're done.
 
 ## What you need
 
@@ -120,6 +120,10 @@ What you hand reps is the **rank**, not the raw score: "your #3 account" beats "
 Say you sell a platform-engineering tool to DevOps and infrastructure teams. Run the skill against your CRM and within an afternoon you can see that your customers skew digital-native and recently-funded, that Kubernetes footprint predicts fit better than headcount, and that a recent raise plus an active cloud-migration initiative is your strongest "buy now" combination. You tune until the Evaluation tab confirms it, Save, and run the portable scorer across all 90,000 accounts in one run.
 
 And because every attribute links straight into the people, teams, and jobs behind it, the ranked list is a prospecting queue with the next action already attached. The same skill, run in whitespace mode, turns it on the accounts you're not selling to yet: same model, minus the first-party attributes a stranger can't have.
+
+Next step:
+
+- Open the [Sumble account scoring skill](../SKILL.md).
 
 ---
 

@@ -4,7 +4,7 @@ Most territory planning deals accounts out until every rep's pile is the same si
 
 **Skill:** [`sumble-territory-planning`](../SKILL.md). Run it in Claude Code, Codex, or Cursor.
 
-Companion to [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md): scoring answers *which accounts are strong*; this skill answers *are the right reps on them, and are the books fair*.
+Companion to [account scoring](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md): scoring answers *which accounts are strong*; this skill answers *are the right reps on them, and are the books fair*.
 
 ## TLDR
 - An even account count is not a fair book: a rep with an exactly average-sized book can still hold most of the segment's best accounts.
@@ -42,7 +42,7 @@ So the app ranks each rep's accounts only against their own segment, and shows o
 
 Capture and Activation are only as good as the "value" underneath them. If value means headcount, you've rebuilt the size ranking you were trying to escape; if it means gut feel, reps won't trust the reassignment.
 
-This skill takes account strength from a [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) run — a score calibrated to *your* closed-won deals, where every component links through to the people, teams, and projects behind it. (No scoring run yet? It falls back to Sumble's own account score via the API.) Either way, "the segment's best accounts" means best *for you*, not biggest, and a rep facing a proposed move can click through to why the account is worth taking.
+This skill takes account strength from an [account-scoring](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) run — a score calibrated to *your* closed-won deals, where every component links through to the people, teams, and projects behind it. (No scoring run yet? It falls back to Sumble's own account score via the API.) Either way, "the segment's best accounts" means best *for you*, not biggest, and a rep facing a proposed move can click through to why the account is worth taking.
 
 ## The flags a balance number hides
 
@@ -80,6 +80,8 @@ python3 app.py        # http://localhost:8002
 
 Stock Python 3.10+, no dependencies.
 
+**Want to see it live?** Explore the [territory planning demo](https://territory-planning-demo.sumble.com/): Northwind's two segments, the Capture / Activation heatmaps, the attention flags, and the suggest → accept/reject → export queue, the same kind of app the skill builds. Fictitious data, for demonstration purposes only.
+
 ## Run it on yours
 
 You need a coding agent (**Claude Code**, **OpenAI Codex**, or **Cursor**), your CRM ownership (Salesforce, HubSpot, a warehouse, or a CSV with account, owner, and a size signal), and ideally an existing account-scoring run for the value column. Connect whatever activity sources you have — Google Calendar, Gong, Fireflies, Granola, Salesforce email — and Activation lights up; skip them and you still get balance and segment fit.
@@ -101,4 +103,4 @@ Calibrate the line and the targets, work the suggested-moves queue, export `acti
 
 A territory plan is usually a once-a-year fire drill that's stale by Q2: someone rebuilds it in a spreadsheet, everyone argues, and the books drift the moment a rep leaves or an account heats up. Keying territories to a live account score changes that. Re-run it, and the accounts that got stronger, the reps who fell behind on coverage, and the new hire who needs a book all show up as fresh moves in the same queue. The plan stops being a project and becomes a habit.
 
-It also sits on the same foundation as the rest of the GTM engine. [`sumble-crm-cleaning`](../../sumble-crm-cleaning/articles/01-clean-your-crm-against-the-org-graph.md) resolves every account to a real organization — and catches the double-allocations before they distort your balance. [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) tells you which accounts are worth fighting over. This skill puts the right reps on them.
+It also sits on the same foundation as the rest of the GTM engine. [CRM cleaning](../../sumble-crm-cleaning/articles/01-clean-your-crm-against-the-org-graph.md) resolves every account to a real organization — and catches the double-allocations before they distort your balance. [Account scoring](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) tells you which accounts are worth fighting over. This skill puts the right reps on them.

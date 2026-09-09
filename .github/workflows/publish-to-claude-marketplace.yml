@@ -1,0 +1,111 @@
+name: Publish to Claude plugin marketplace
+
+# Vendor every skill in this repo into the private marketplace repo
+# (github.com/SumbleData/claude-plugins), which Claude organization settings
+# syncs from. Teammates get the updated skill in Claude Desktop chat and
+# Cowork without doing anything.
+#
+# The change lands as a pull request, not a direct push, because organization
+# auto-sync only fires when a PR containing a plugin version bump is merged to
+# the default branch. Direct pushes are ignored by the sync.
+#
+# The marketplace it declares is named "sumble-internal", not "sumble". The
+# public marketplace in this repo (.claude-plugin/marketplace.json) owns
+# "sumble", and adding a second marketplace under a name already in use
+# silently replaces the first.
+#
+# Setup, already done:
+#   - PRIVATE repo github.com/SumbleData/claude-plugins exists (public repos
+#     are not allowed as organization marketplace sources), with "Allow
+#     auto-merge" and "Automatically delete head branches" on.
+#
+# Setup, still needed before this workflow does anything:
+#   1. Install the Claude GitHub App on SumbleData/claude-plugins.
+#   2. Create a fine-grained PAT (or GitHub App token) with Contents: write and
+#      Pull requests: write on that repo. Store it here as the Actions secret
+#      CLAUDE_MARKETPLACE_TOKEN. Until it exists, every run exits with a skip
+#      notice.
+#   3. In Claude: Organization settings > Plugins > Add plugins > GitHub >
+#      SumbleData/claude-plugins, then turn on "Sync automatically" and set each
+#      plugin's installation preference.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - '.github/scripts/build_claude_marketplace.py'
+      - '.github/workflows/publish-to-claude-marketplace.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-to-claude-marketplace
+  cancel-in-progress: false
+
+env:
+  MARKETPLACE_REPO: SumbleData/claude-plugins
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_MARKETPLACE_TOKEN != '' }}
+    steps:
+      - name: Skip notice (no token configured)
+        if: env.HAS_TOKEN != 'true'
+        run: echo "CLAUDE_MARKETPLACE_TOKEN not set — skipping. See workflow header for setup."
+
+      - name: Checkout skills
+        if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v4
+
+      - name: Checkout marketplace repo
+        if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MARKETPLACE_REPO }}
+          token: ${{ secrets.CLAUDE_MARKETPLACE_TOKEN }}
+          path: marketplace
+
+      - name: Build marketplace
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 .github/scripts/build_claude_marketplace.py \
+            --skills-dir skills --target marketplace
+
+      - name: Open and auto-merge the sync PR
+        if: env.HAS_TOKEN == 'true'
+        working-directory: marketplace
+        env:
+          GH_TOKEN: ${{ secrets.CLAUDE_MARKETPLACE_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "sumble-skills-sync[bot]"
+          git config user.email "sync@sumble.com"
+
+          if git diff --quiet && git diff --cached --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "Marketplace already matches skills/ — nothing to publish."
+            exit 0
+          fi
+
+          branch="sync/skills-${SOURCE_SHA::7}"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "Sync skills from sumble-skills-public@${SOURCE_SHA::7}"
+          git push --force origin "$branch"
+
+          gh pr create \
+            --repo "$MARKETPLACE_REPO" \
+            --head "$branch" \
+            --title "Sync skills from sumble-skills-public@${SOURCE_SHA::7}" \
+            --body "Automated vendor of \`skills/\` from sumble-skills-public. Merging this triggers the Claude organization marketplace sync." \
+            || echo "PR already exists for $branch"
+
+          # Auto-merge so the sync fires without a human in the loop. Swap for
+          # a plain `gh pr merge --squash` if you'd rather review each sync.
+          gh pr merge "$branch" --repo "$MARKETPLACE_REPO" --squash --auto --delete-branch

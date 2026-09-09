@@ -1,0 +1,12 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sumble-direct-mail-audience",
+  "description": "Install and launch the supplied Marimo app for building direct-mail audiences near company offices. Use when a user wants to research company offices with Sumble and Parallel, select job functions and seniority, filter people by distance, or run the direct-mail audience notebook. Copies the fixed app template, helps save API keys to a local .env file, installs locked dependencies with uv, and returns a local Marimo URL.",
+  "author": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-direct-mail-audience",
+  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "license": "MIT"
+}

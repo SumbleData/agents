@@ -1,0 +1,12 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sumble-mcp",
+  "description": "Use Sumble MCP for account research, prospecting, people/job/technology searches, organization/contact list workflows, and Sumble MCP prompt or docs authoring. Use when Codex should follow Sumble MCP tool sequencing, query rules, and credit-management guardrails.",
+  "author": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-mcp",
+  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "license": "MIT"
+}

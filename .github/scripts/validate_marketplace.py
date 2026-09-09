@@ -7,17 +7,25 @@ root. The manifest is hand-maintained, so it drifts the moment someone adds a
 skill and forgets the entry: the skill ships in the zip and to the sx vault,
 and is simply missing from Claude.
 
-This checks four things:
+Each skill folder also carries its own .claude-plugin/plugin.json. Claude Code
+would load a bare folder with a root SKILL.md as a single-skill plugin, but the
+claude.ai marketplace sync rejected that shape ("Marketplace sync failed"), and
+every working public marketplace either ships a plugin.json per plugin or
+declares its skills explicitly. The manifest is the shape that works.
+
+This checks:
   - every skills/<name>/SKILL.md has a manifest entry
   - every manifest entry points at a folder that exists and has a SKILL.md
   - the entry name matches the skill's frontmatter name (that name is the
     plugin id users type: <name>@sumble)
   - the entry description matches the frontmatter description
+  - skills/<name>/.claude-plugin/plugin.json exists, and its name and
+    description match the frontmatter too
 
-Entries deliberately carry NO `version` field. With a version pinned, Claude
-treats the installed copy as current and an edited skill never reaches anyone
-who already installed it; with the field absent, the version is the source
-commit and Sync delivers every change.
+Neither the entries nor the plugin.json files carry a `version` field. With a
+version pinned in either place, Claude treats the installed copy as current and
+an edited skill never reaches anyone who already installed it; with the field
+absent, the version is the source commit and Sync delivers every change.
 
 Run locally from the repo root:
     python3 .github/scripts/validate_marketplace.py
@@ -105,6 +113,26 @@ def main() -> int:
                 f"— copy the frontmatter description into the manifest"
             )
 
+        plugin_json = SKILLS_DIR / name / ".claude-plugin" / "plugin.json"
+        if not plugin_json.is_file():
+            problems.append(
+                f"{name}: {plugin_json} is missing — the claude.ai marketplace "
+                f"sync rejects a plugin folder without one"
+            )
+            continue
+        pj = json.loads(plugin_json.read_text(encoding="utf-8"))
+        if pj.get("name") != name:
+            problems.append(f"{name}: {plugin_json} name is {pj.get('name')!r}")
+        if pj.get("description") != fm.get("description"):
+            problems.append(
+                f"{name}: {plugin_json} description differs from the frontmatter"
+            )
+        if "version" in pj:
+            problems.append(
+                f"{name}: remove 'version' from {plugin_json} — it pins the "
+                f"plugin and blocks updates the same way the entry field does"
+            )
+
     if problems:
         for msg in problems:
             print(f"::error file={MANIFEST}::{msg}")
@@ -112,7 +140,7 @@ def main() -> int:
         sys.stderr.write(f"\n{MANIFEST} is out of sync with skills/.\n")
         return 1
 
-    print(f"ok   {MANIFEST} lists all {len(on_disk)} skill(s), sources and text match")
+    print(f"ok   {MANIFEST} lists all {len(on_disk)} skill(s); sources, plugin.json and text match")
     return 0
 
 

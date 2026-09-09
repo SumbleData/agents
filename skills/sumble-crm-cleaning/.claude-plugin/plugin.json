@@ -1,0 +1,12 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sumble-crm-cleaning",
+  "description": "Build a CRM-cleaning review web app powered by Sumble data. Finds (1) potential duplicate accounts \u2014 CRM accounts that resolve to the SAME Sumble organization (Sumble's matcher is the only duplicate evidence; no domain or name-similarity matching) \u2014 and (2) missing or conflicting parent/subsidiary links, by matching every account to Sumble's organization graph via POST /v6/organizations (attributes incl. parent_id/subsidiary_ids \u2014 no SQL, no RunSqlQuery). Interviews the user about their CRM source and which checks to run, pulls the account list from internal systems or a CSV, and generates a self-contained, zero-dependency Python + HTML/JS review app at crm_cleaning/{company}/ with accept/reject/skip per finding, survivor selection for merges, and an actions.csv export of every approved CRM change.",
+  "author": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-crm-cleaning",
+  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "license": "MIT"
+}

@@ -9,21 +9,30 @@
   SINGLE-ACCOUNT DEEP DIVE. One account, one page. Build it section by section per
   references/deep-dive-brief.md. Hold every line to references/writing-rules.md.
 
-  Section spine (keep this order; it is the argument, not a layout):
-    Thesis -> Verdict -> Signal footprint -> Their stack -> Three doors -> Why now
-    -> The plays -> Who to contact first -> Messaging -> Evidence receipts
-    -> Limits & method
+  Section spine (keep this order; decision first, analysis after):
+    1 Exec summary     hero (thesis, lede, stat tiles) + the three-line summary box
+    2 Current status   "With you" timeline (skip when empty; one plain line instead) + Their stack
+    3 Priority         High / Medium / Low chip, Fit and Trigger reasons, what would change it
+    4 Next step        Why now -> Ways in -> Who to contact first -> The plays -> Messaging
+    5 Raw data         Signal footprint + Evidence receipts
+    6 Limits & method
 
   These sections map onto the five that `GetIntelligenceBrief` returns in its markdown
   body, so the API can populate the page and the two speak one vocabulary:
-    What's the Angle          -> the <h1> thesis, and the Verdict
-    The Intel                 -> Signal footprint + Their stack
-    Which Teams Are The Best Fit -> Three doors (one door per team, with its lead)
-    Recent Changes            -> Why now
-    Who To Contact First      -> Who to contact first
+    What's the Angle             -> the <h1> thesis, and the summary box
+    The Intel                    -> Their stack (section 2) + Signal footprint (section 5)
+    Recent Changes               -> Why now (section 4)
+    Which Teams Are The Best Fit -> Ways in (section 4; one door per team, with its lead)
+    Who To Contact First         -> Who to contact first (section 4)
+  Current status ("With you"), Priority and Limits have NO API source. Status comes from
+  the seller's own systems (Step 1b), Priority is your call, Limits is your honesty.
   The API also returns two things worth carrying through that no hand-built brief has:
   a per-contact CRM status (Contact / Lead / no matching record) and a per-contact fit
   score. Both render on the contact rows below.
+
+  Every line a rep says out loud (call lines, subjects, messages) asserts a belief about
+  the prospect's priorities and cites nothing: no "I saw you're hiring", no counts, no
+  postings, no LinkedIn. Evidence lives in the evidence boxes, for the rep's eyes.
 
   Self-contained: no build step, no external assets except the Google font. The
   Sumble mark is inlined by the publish step (see the Deliver section of
@@ -74,12 +83,41 @@ a.lnk:hover{border-color:var(--green-700)}
 .page{max-width:860px;margin:0 auto;padding:0 24px 80px}
 section{margin-top:52px}
 .sec-h{font-family:var(--font-display);font-size:19px;font-weight:600;letter-spacing:-.01em;margin-bottom:5px}
+.sec-n{font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--green-700);margin-right:10px;vertical-align:middle}
 .sec-sub{font-size:12.5px;color:var(--slate-500);margin-bottom:20px;max-width:70ch}
+/* sub-headings inside a section: section 4 has five blocks, section 2 and 5 have two */
+.sub-h{font-family:var(--font-display);font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:32px 0 4px}
+.sub-h:first-of-type{margin-top:6px}
+.sub-sub{font-size:12px;color:var(--slate-500);margin-bottom:14px;max-width:70ch}
 
-/* verdict: the call, up front, in one paragraph */
-.verdict{margin-top:38px;background:var(--green-50);border:1px solid var(--green-200);border-left:3px solid var(--green-600);border-radius:10px;padding:17px 20px}
-.verdict-l{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green-700);margin-bottom:7px}
-.verdict p{font-size:14px;color:var(--slate-800)}
+/* exec summary: three lines a rep can act on alone */
+.summary{margin-top:38px;background:var(--green-50);border:1px solid var(--green-200);border-left:3px solid var(--green-600);border-radius:10px;padding:15px 20px 12px}
+.summary-l{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green-700);margin-bottom:6px}
+.sum-row{display:grid;grid-template-columns:118px 1fr;gap:12px;padding:8px 0;border-top:1px solid var(--green-200);font-size:13.5px;color:var(--slate-800)}
+.sum-row:first-of-type{border-top:0}
+.sum-k{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--green-800);padding-top:3px}
+.sum-v b{font-weight:600;color:var(--slate-900)}
+.sum-v .prio{margin-right:8px}
+
+/* priority band: one accent at three intensities. No rainbow. */
+.prio{display:inline-block;font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:20px;white-space:nowrap;vertical-align:middle;border:1px solid transparent}
+.prio.high{background:var(--green-600);color:#fff;border-color:var(--green-600)}
+.prio.med{background:var(--green-100);color:var(--green-800);border-color:var(--green-200)}
+.prio.low{background:var(--slate-100);color:var(--slate-600);border-color:var(--slate-200)}
+.prio-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.prio-head .prio{font-size:12px;padding:5px 14px}
+.prio-head p{font-size:14px;color:var(--slate-800);flex:1;min-width:240px}
+.reason{font-size:12.5px;color:var(--slate-700);padding:7px 0;border-top:1px solid var(--slate-100)}
+.reason:first-of-type{border-top:0}
+.reason b{color:var(--slate-900);font-weight:600}
+.reason .d{font-family:var(--font-mono);font-size:10.5px;color:var(--green-700);margin-right:8px}
+.prio-move{margin-top:16px;font-size:12.5px;color:var(--slate-600);border-left:1.5px dashed var(--slate-300);padding-left:11px}
+.prio-move .k{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--slate-400);margin-right:7px}
+
+/* current status: the relationship, dated, with its source system */
+.status-line{font-size:13.5px;color:var(--slate-800);background:var(--slate-50);border:1px solid var(--slate-200);border-radius:8px;padding:11px 14px;margin-bottom:6px}
+.status-line b{font-weight:600}
+.src{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:4px;background:var(--slate-100);color:var(--slate-500);border:1px solid var(--slate-200);margin-left:8px;vertical-align:middle;white-space:nowrap}
 
 /* telemetry: horizontal footprint bars. Accent = your tech / the play; grey = context. */
 .bars{display:flex;flex-direction:column;gap:9px}
@@ -99,22 +137,26 @@ section{margin-top:52px}
 .um-strong{background:var(--green-50);color:var(--green-800);border:1px solid var(--green-200)}
 .um-weak{background:var(--slate-100);color:var(--slate-500);border:1px solid var(--slate-200)}
 
-/* three doors: never hand the rep one way in */
+/* three doors: never hand the rep one way in. Door 01 is the recommended start. */
 .doors{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:14px}
 .door{border:1px solid var(--slate-200);border-radius:11px;padding:15px 17px;display:flex;flex-direction:column;gap:9px}
+.door.rec{border-color:var(--green-600);box-shadow:inset 0 0 0 1px var(--green-600)}
 .door-n{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--slate-400)}
+.door-rec{display:inline-block;font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--green-600);border-radius:99px;padding:2px 8px;margin-left:8px;vertical-align:middle}
 .door-t{font-family:var(--font-display);font-size:14px;font-weight:600;line-height:1.3}
 .door-w{font-size:12.5px;color:var(--slate-600)}
 /* The team this door goes through, and who leads it. A door without a team is a guess. */
 .door-team{font-size:11.5px;color:var(--slate-500);padding-bottom:2px}
 .door-team b{color:var(--slate-800);font-weight:600}
+/* The play this door opens. Must match a .play-b badge below, or it is decoration. */
+.door-play{font-family:var(--font-mono);font-size:10px;padding:2px 9px;border-radius:20px;background:var(--slate-100);color:var(--slate-600);border:1px solid var(--slate-200);align-self:flex-start}
 .entry{background:var(--green-50);border:1px solid var(--green-200);border-radius:8px;padding:9px 11px}
 .entry-b{display:inline-block;font-family:var(--font-mono);font-size:9px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--green-800);background:#fff;border:1px solid var(--green-200);border-radius:99px;padding:2px 8px;margin-bottom:5px}
 .entry-nm{font-size:12.5px;font-weight:600}
 .entry-rl{font-size:11.5px;color:var(--slate-600)}
 .rollup{font-size:11px;color:var(--slate-500);border-left:1.5px dashed var(--slate-300);padding-left:10px}
 
-/* why now: dated, or it isn't a trigger */
+/* dated rows: used for Why now and for the Current status timeline */
 .whynow{display:flex;flex-direction:column;gap:9px}
 .trig{display:grid;grid-template-columns:88px 1fr;gap:13px;align-items:baseline;padding:11px 0;border-top:1px solid var(--slate-100)}
 .trig:first-child{border-top:0}
@@ -198,7 +240,7 @@ section{margin-top:52px}
 .fan-row .tt{color:var(--slate-500)}
 .fan-none{font-size:11px;color:var(--slate-400);font-style:italic;padding:3px 0 1px 13px;margin:3px 0 0 17px;border-left:1.5px dashed var(--slate-200)}
 
-/* persona playbook: one copy-ready message per door */
+/* messaging: one copy-ready message per door */
 .msgs{display:flex;flex-direction:column;gap:13px}
 .msg{border:1px solid var(--slate-200);border-radius:10px;overflow:hidden}
 .msg-head{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--slate-50);padding:9px 16px;border-bottom:1px solid var(--slate-200)}
@@ -209,6 +251,9 @@ section{margin-top:52px}
 .msg-body .subj{font-family:var(--font-mono);font-size:11.5px;color:var(--slate-500);margin-bottom:8px}
 .msg-body .subj b{color:var(--slate-800)}
 .msg-body p{font-size:13px;color:var(--slate-700)}
+
+/* raw data: kept below the decision on purpose */
+.appendix{margin-top:60px;padding-top:26px;border-top:2px solid var(--slate-200)}
 
 /* evidence receipts */
 .receipts{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -229,7 +274,7 @@ section{margin-top:52px}
 .footer-logo{display:flex;align-items:center;gap:8px}.footer-logo img{width:18px;height:18px;display:block}
 .footer-logo span{font-family:var(--font-display);font-size:13px;font-weight:600;color:rgba(255,255,255,.7)}
 .footer-right{font-family:var(--font-mono);font-size:10px;color:rgba(255,255,255,.45);text-align:right;line-height:1.7}
-@media(max-width:640px){.nav{padding:12px 16px}.hero{padding:32px 20px}.page{padding:0 16px 60px}.cols{grid-template-columns:1fr}.play-body{padding:16px}.footer{padding:20px}.play-b,.play-s{display:none}.bar-row{grid-template-columns:104px 1fr 54px}}
+@media(max-width:640px){.nav{padding:12px 16px}.hero{padding:32px 20px}.page{padding:0 16px 60px}.cols{grid-template-columns:1fr}.sum-row{grid-template-columns:1fr;gap:3px}.play-body{padding:16px}.footer{padding:20px}.play-b,.play-s{display:none}.bar-row{grid-template-columns:104px 1fr 54px}}
 </style>
 </head>
 <body>
@@ -243,6 +288,7 @@ section{margin-top:52px}
   <span class="nav-meta">{{RECIPIENT}}</span>
 </nav>
 
+<!-- ============================================================ 1 · EXEC SUMMARY -->
 <div class="hero">
   <div class="hero-inner">
     <p class="hero-eye">{{SELLER}} × {{ACCOUNT}} · {{CONTEXT}}</p>
@@ -251,7 +297,7 @@ section{margin-top:52px}
          Salesforce builds on." Never "Account overview: Salesforce". -->
     <h1 class="hero-h">{{THESIS}}</h1>
     <!-- Hard numbers in the first 200 words, each with a direction. -->
-    <p class="hero-sub">{{LEDE — 2-3 sentences carrying the strongest counts and YoY moves, <strong>bolded</strong>.}}</p>
+    <p class="hero-sub">{{LEDE: 2-3 sentences carrying the strongest counts and YoY moves, <strong>bolded</strong>.}}</p>
     <div class="stats">
       <!-- 3-4 tiles. Add class "up" to the number when it is a growth figure. -->
       <div class="stat"><div class="n up">{{+54.8%}}</div><div class="l">{{metric, with the window}}</div></div>
@@ -264,38 +310,52 @@ section{margin-top:52px}
 
 <div class="page">
 
-  <div class="verdict">
-    <div class="verdict-l">Verdict</div>
-    <p>{{One paragraph: work it or don't, and the single reason. A rep should be able to
-       read only this box and know what to do next.}}</p>
+  <!-- Three lines a rep can act on without reading further. Each must survive alone.
+       The Priority chip and the Next step name must agree with sections 3 and 4. -->
+  <div class="summary">
+    <div class="summary-l">Exec summary</div>
+    <div class="sum-row">
+      <span class="sum-k">Where it stands</span>
+      <div class="sum-v">{{One sentence on the relationship, one on the account. "Closed-lost 2024
+        on price, no contact since. Now hiring against the exact problem we solve." Or, cold:
+        "<b>Never touched.</b> Not in the CRM."}}</div>
+    </div>
+    <div class="sum-row">
+      <span class="sum-k">Priority</span>
+      <!-- class: high | med | low. The single strongest reason, not the list. -->
+      <div class="sum-v"><span class="prio high">{{High}}</span>{{The one reason that sets the band.}}</div>
+    </div>
+    <div class="sum-row">
+      <span class="sum-k">Next step</span>
+      <div class="sum-v">{{Who, through which play, by when. A name, not a role: "Call <b>{{Name}}</b>
+        ({{title}}) this week on the {{play name}} play."}}</div>
+    </div>
   </div>
 
+  <!-- ============================================================ 2 · CURRENT STATUS -->
   <section>
-    <!-- Feeds from the API brief's "The Intel" section. Named for what is on screen:
-         how big their footprint is in each technology, not "telemetry". -->
-    <h2 class="sec-h">Signal footprint</h2>
-    <p class="sec-sub">{{Job posts at {{ACCOUNT}} mentioning each technology or initiative.
-       {{employees}} employees · {{tracked posts}} tracked posts · {{teams}} teams.}}</p>
-    <div class="legend">
-      <span><span class="sw" style="background:var(--green-600)"></span>{{Your tech / the play}}</span>
-      <span><span class="sw" style="background:var(--slate-300)"></span>Context signal</span>
-    </div>
-    <div class="bars">
-      <!-- Widths are percentages of the largest row. Duplicate per technology,
-           biggest first. Add class "own" to the fill for your own / play-relevant tech. -->
-      <div class="bar-row"><div class="bname">{{Kubernetes}}</div><div class="track"><div class="fill" style="width:100%"></div></div><div class="val">{{2,149}}</div></div>
-      <div class="bar-row"><div class="bname">{{Terraform}}</div><div class="track"><div class="fill own" style="width:59.7%"></div></div><div class="val">{{1,283}}</div></div>
-      <div class="bar-row"><div class="bname">{{Vault + Consul}}</div><div class="track"><div class="fill own" style="width:1.7%;min-width:4px"></div></div><div class="val">{{37}}</div></div>
-    </div>
-    <p class="sec-sub" style="margin-top:18px;margin-bottom:0">{{Secondary wedge: the whitespace
-       the bars reveal — a category they are hiring against with no incumbent named.}}</p>
-  </section>
+    <h2 class="sec-h"><span class="sec-n">02</span>Current status</h2>
+    <p class="sec-sub">Where this account stands today: with you, and technically. The first block
+       comes from your own systems and no Sumble field can fill it.</p>
 
-  <section>
-    <h2 class="sec-h">Their stack</h2>
-    <p class="sec-sub">Confirmed in their profile versus named only in postings. A person's listed
-       technology is their experience, not proof the company runs it. The API brief does not
-       draw this line, so draw it here.</p>
+    <h3 class="sub-h">With you</h3>
+    <!-- IF THERE IS NO ACTIVITY: keep ONLY the status line, delete the timeline, and say
+         in Limits which categories were connected-and-empty vs never connected.
+         Never pad this block with Sumble signals dressed as history. -->
+    <div class="status-line">{{<b>No prior relationship.</b> Not in the CRM, no calls, no signups,
+       no marketing touches.}}</div>
+    <!-- IF THERE IS ACTIVITY: delete the status line above and use the timeline. Newest
+         first. Every row dated, with a .src chip naming the system it came from. -->
+    <div class="whynow">
+      <div class="trig"><div class="d">{{Mar 2026}}</div><div class="t"><b>{{Closed-lost, $84k}}</b>: {{loss reason verbatim from the CRM}}.<span class="src">{{Salesforce}}</span></div></div>
+      <div class="trig"><div class="d">{{Feb 2026}}</div><div class="t"><b>{{Discovery call}}</b> with {{names}}: "{{the one sentence that matters now}}".<span class="src">{{Gong}}</span></div></div>
+      <div class="trig"><div class="d">{{Jan 2026}}</div><div class="t"><b>{{Self-serve signup}}</b> by {{name, title}}; {{what they did with it}}.<span class="src">{{Product analytics}}</span></div></div>
+    </div>
+
+    <h3 class="sub-h">Their stack</h3>
+    <p class="sub-sub">Confirmed in their profile versus named only in postings. A person's listed
+       technology is their experience, not proof the company runs it. Lead with the tools that
+       matter to the play: yours, the competitor you displace, the complement you attach to.</p>
     <div class="stack-tags">
       <!-- um-strong = confirmed adopted. um-weak = competitor / displacement, or postings-only. -->
       <span class="um um-strong">{{Confirmed tech}}</span>
@@ -303,19 +363,63 @@ section{margin-top:52px}
     </div>
   </section>
 
+  <!-- ============================================================ 3 · PRIORITY -->
   <section>
-    <h2 class="sec-h">Three doors</h2>
-    <p class="sec-sub">Three independent ways in, so a cold door doesn't end the account. Each door
-       is a real team, named with its lead, plus the entry point and who rolls up to them.</p>
+    <h2 class="sec-h"><span class="sec-n">03</span>Priority</h2>
+    <p class="sec-sub">How much of the week this account deserves. High: work it this week. Medium:
+       this quarter, or nurture with a dated reminder. Low: park it, and say what would move it.</p>
+    <!-- class: high | med | low. One sentence: the band in plain words. -->
+    <div class="prio-head">
+      <span class="prio high">{{High}}</span>
+      <p>{{Strong fit and a fresh trigger: {{the trigger}}, with {{the champion}} still in seat.
+         Work it this week.}}</p>
+    </div>
+    <!-- Two to four reasons total, split so the rep can see whether this account rides fit,
+         a trigger, or both. Never a bare score: give it a denominator. -->
+    <div class="cols">
+      <div class="col">
+        <div class="col-l">Fit</div>
+        <div class="reason"><b>{{Score 82}}</b> against your ICP, {{top decile of your list}}.</div>
+        <div class="reason">{{The tech or function match, named.}}</div>
+      </div>
+      <div class="col">
+        <div class="col-l">Trigger</div>
+        <div class="reason"><span class="d">{{Jun 2026}}</span><b>{{What happened}}</b>, {{why it matters to this deal}}.</div>
+        <div class="reason"><span class="d">{{May 2026}}</span>{{Second trigger, dated.}}</div>
+      </div>
+    </div>
+    <p class="prio-move"><span class="k">What would change this</span>{{The one fact a rep who disagrees
+       should go and check: "Drops to Medium if the platform lead role closes without a hire."}}</p>
+  </section>
+
+  <!-- ============================================================ 4 · NEXT STEP -->
+  <section>
+    <h2 class="sec-h"><span class="sec-n">04</span>Next step</h2>
+    <p class="sec-sub">Who to contact, with which play, and why. When, then where, then whom, then
+       what to say, then the words.</p>
+
+    <h3 class="sub-h">Why now</h3>
+    <p class="sub-sub">Every line dated. An undated trigger is not a trigger.</p>
+    <div class="whynow">
+      <!-- Duplicate per trigger, newest first. -->
+      <div class="trig"><div class="d">{{Jun 2026}}</div><div class="t">{{<b>What happened</b>, and the consequence for this deal.}}</div></div>
+    </div>
+
+    <h3 class="sub-h">Ways in</h3>
+    <p class="sub-sub">Three independent doors, so a cold one doesn't end the account. Each is a real
+       team, named with its lead, the play it opens, the entry point, and who rolls up to them.
+       Door 01 is the start; it must match the exec summary's next-step line.</p>
     <div class="doors">
       <!-- Duplicate per door. Two is acceptable; one is not a door, it's a single point of
-           failure. This section absorbs the API brief's "Which Teams Are The Best Fit": each
+           failure. This block absorbs the API brief's "Which Teams Are The Best Fit": each
            best-fit team becomes a door, and the team's lead goes in .door-team. A door with no
-           named team is a guess, so cut it rather than ship it. -->
-      <div class="door">
-        <div class="door-n">Door 01</div>
+           named team is a guess, so cut it rather than ship it. Only door 01 gets class "rec"
+           and the badge. .door-play must match a .play-b badge below. -->
+      <div class="door rec">
+        <div class="door-n">Door 01<span class="door-rec">Start here</span></div>
         <div class="door-t">{{What this door is: the function and the wedge}}</div>
         <div class="door-team">Team <b>{{Team name}}</b> · led by {{Lead name}}</div>
+        <span class="door-play">{{Play name}}</span>
         <div class="door-w">{{Why this door opens: the evidence behind it.}}</div>
         <div class="entry">
           <span class="entry-b">Entry point</span>
@@ -324,62 +428,26 @@ section{margin-top:52px}
         </div>
         <div class="rollup">{{N directors + N managers}} · {{surnames, comma separated}}</div>
       </div>
-    </div>
-  </section>
-
-  <section>
-    <h2 class="sec-h">Why now</h2>
-    <p class="sec-sub">Every line dated. An undated trigger is not a trigger.</p>
-    <div class="whynow">
-      <!-- Duplicate per trigger, newest first. -->
-      <div class="trig"><div class="d">{{Jun 2026}}</div><div class="t">{{<b>What happened</b>, and the consequence for this deal.}}</div></div>
-    </div>
-  </section>
-
-  <section>
-    <h2 class="sec-h">The plays</h2>
-    <p class="sec-sub">One card per play. Filter pills are the seller's own play names, taken
-       verbatim from whatever they uploaded at Step 1c and falling back to the Step 1 profile;
-       drop them and keep "All plays" if there are no distinct named plays.</p>
-    <div class="filters">
-      <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">All plays</button>
-      <button class="filter-btn" data-filter="{{PLAY_SLUG}}" onclick="setFilter('{{PLAY_SLUG}}',this)">{{Play name}}</button>
-    </div>
-
-    <!-- Duplicate .play per play. data-play must match a pill's data-filter. -->
-    <div class="play" data-play="{{PLAY_SLUG}}">
-      <div class="play-h" onclick="togglePlay(this)">
-        <span class="play-n">01</span>
-        <div class="play-i">
-          <div class="play-t">{{The "so what" in one line — a consequence, not a topic}}</div>
-          <div class="play-s">{{team · one-line evidence}}</div>
+      <div class="door">
+        <div class="door-n">Door 02</div>
+        <div class="door-t">{{What this door is}}</div>
+        <div class="door-team">Team <b>{{Team name}}</b> · led by {{Lead name}}</div>
+        <span class="door-play">{{Play name}}</span>
+        <div class="door-w">{{Why this door opens.}}</div>
+        <div class="entry">
+          <span class="entry-b">Entry point</span>
+          <div class="entry-nm"><a class="lnk" href="{{SUMBLE_PERSON_URL}}">{{Name}}</a></div>
+          <div class="entry-rl">{{Title}}</div>
         </div>
-        <span class="play-b">{{Play name}}</span>
-        <span class="play-c">▼</span>
-      </div>
-      <div class="play-body">
-        <div class="evid"><div class="evid-l">Evidence</div><div class="evid-t">{{Lead with the
-          confirmed tech or hiring signal. Hyperlink the org and the single strongest posting to
-          <a class="lnk" href="{{SUMBLE_JOB_URL}}">Sumble</a>. Counts live here, never in the call line.}}</div></div>
-        <div class="cols">
-          <div class="col"><div class="col-l">The call</div><p class="call">"{{Open on their
-            situation, land on the named product or module. No Sumble vocabulary — the prospect
-            has never heard of Sumble.}}"<span class="proof">{{Reference customer · concrete
-            outcome — only if you actually have one}}</span></p></div>
-          <div class="col"><div class="col-l">What to test</div><p>{{The discovery question as
-            curiosity, not a second pitch. <strong>Bold</strong> the key qualifier.}}</p></div>
-        </div>
+        <div class="rollup">{{N directors + N managers}} · {{surnames}}</div>
       </div>
     </div>
-  </section>
 
-  <section>
-    <!-- Was "Buying group". Renamed to the question the rep actually asks, which is the API
-         brief's "Who To Contact First" framing. The buying-group STRUCTURE stays: role chips
-         and the scored reporting fan-out. Order the rows by who to approach first, 01 down. -->
-    <h2 class="sec-h">Who to contact first</h2>
-    <p class="sec-sub">Ordered, not listed. Only people currently at the company: verify each name
+    <h3 class="sub-h">Who to contact first</h3>
+    <p class="sub-sub">Ordered, not listed. Only people currently at the company: verify each name
        before it goes on the page, because a departed champion discredits the whole brief.</p>
+    <!-- The buying-group STRUCTURE stays: role chips and the scored reporting fan-out.
+         Order the rows by who to approach first, 01 down. -->
     <div class="buygroup">
       <div class="bg-head">
         <span class="bg-lbl">Team</span>
@@ -449,54 +517,118 @@ section{margin-top:52px}
       </div>
       <div class="fan">
         <div class="fan-anchor"><span class="nm">{{Name}}</span> · <span class="tt">{{Title}}</span><span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
-        <div class="fan-none">{{No reports mapped in Sumble — reach directly, or warm-intro via the champion.}}</div>
+        <div class="fan-none">{{No reports mapped in Sumble. Reach directly, or warm-intro via the champion.}}</div>
       </div>
     </div>
-  </section>
 
-  <section>
-    <!-- Was "Persona playbook", which promised more than three emails delivers. -->
-    <h2 class="sec-h">Messaging</h2>
-    <p class="sec-sub">One message per door, in the rep's voice, leading with the prospect's own
-       numbers. Copy-ready. Keep it to about five sentences: name one or two people, quote one
-       dated fact, state the angle, and close with a low-friction offer.</p>
+    <h3 class="sub-h">The plays</h3>
+    <p class="sub-sub">One card per play. Filter pills are the seller's own play names, taken
+       verbatim from whatever they uploaded at Step 1c and falling back to the Step 1 profile;
+       drop them and keep "All plays" if there are no distinct named plays.</p>
+    <div class="filters">
+      <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">All plays</button>
+      <button class="filter-btn" data-filter="{{PLAY_SLUG}}" onclick="setFilter('{{PLAY_SLUG}}',this)">{{Play name}}</button>
+    </div>
+
+    <!-- Duplicate .play per play. data-play must match a pill's data-filter, and .play-b
+         must match a door's .door-play chip above. -->
+    <div class="play" data-play="{{PLAY_SLUG}}">
+      <div class="play-h" onclick="togglePlay(this)">
+        <span class="play-n">01</span>
+        <div class="play-i">
+          <div class="play-t">{{The "so what" in one line: a consequence, not a topic}}</div>
+          <div class="play-s">{{team · one-line evidence}}</div>
+        </div>
+        <span class="play-b">{{Play name}}</span>
+        <span class="play-c">▼</span>
+      </div>
+      <div class="play-body">
+        <div class="evid"><div class="evid-l">Evidence</div><div class="evid-t">{{Lead with the
+          confirmed tech or hiring signal. Hyperlink the org and the single strongest posting to
+          <a class="lnk" href="{{SUMBLE_JOB_URL}}">Sumble</a>. Counts and sources live here, never
+          in the call line.}}</div></div>
+        <div class="cols">
+          <div class="col"><div class="col-l">The call</div><p class="call">"{{Open on what you
+            believe is a priority for them, land on the named product or module. A belief, never
+            an observation: no "I saw", no postings, no counts. The prospect has never heard of
+            Sumble.}}"<span class="proof">{{Reference customer · concrete outcome. Only if you
+            actually have one.}}</span></p></div>
+          <div class="col"><div class="col-l">What to test</div><p>{{The discovery question as
+            curiosity, not a second pitch. <strong>Bold</strong> the key qualifier.}}</p></div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-h">Messaging</h3>
+    <p class="sub-sub">One message per door, in the rep's voice. Open on what you believe is a
+       priority for them, never on where you learned it: no "I noticed you're hiring", no counts,
+       no source. About five sentences: the priority, the consequence, what you do about it, one
+       low-friction ask. If section 2 said "never touched", this is a first contact; if there is
+       history, name it honestly in the first line.</p>
     <div class="msgs">
       <!-- Duplicate per door. Give each .msg-body a unique id and pass it to cp(). -->
       <div class="msg">
-        <div class="msg-head"><span class="msg-to">{{Name}} — {{the wedge}}</span><button onclick="cp(this,'m1')">Copy</button></div>
+        <div class="msg-head"><span class="msg-to">{{Name}} · {{the wedge}}</span><button onclick="cp(this,'m1')">Copy</button></div>
         <div class="msg-body" id="m1">
-          <div class="subj"><b>Subject:</b> {{Six words, their number in it}}</div>
-          <p>{{Four sentences. Their situation, the consequence, what you do about it, one ask.}}</p>
+          <div class="subj"><b>Subject:</b> {{Six words. Their priority, not your number.}}</div>
+          <p>{{Four to five sentences. What you believe is a priority for them, the consequence,
+             what you do about it, one ask. State beliefs, cite nothing.}}</p>
         </div>
       </div>
     </div>
   </section>
 
-  <section>
-    <h2 class="sec-h">Evidence receipts</h2>
-    <p class="sec-sub">Every number above, with the link that proves it. This is what makes the brief
+  <!-- ============================================================ 5 · RAW DATA -->
+  <section class="appendix">
+    <h2 class="sec-h"><span class="sec-n">05</span>Raw data</h2>
+    <p class="sec-sub">The numbers that produced everything above, kept below the decision on
+       purpose. Every claim on this page should trace to a row here.</p>
+
+    <h3 class="sub-h">Signal footprint</h3>
+    <p class="sub-sub">{{Job posts at {{ACCOUNT}} mentioning each technology or initiative.
+       {{employees}} employees · {{tracked posts}} tracked posts · {{teams}} teams.}}</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--green-600)"></span>{{Your tech / the play}}</span>
+      <span><span class="sw" style="background:var(--slate-300)"></span>Context signal</span>
+    </div>
+    <div class="bars">
+      <!-- Widths are percentages of the largest row. Duplicate per technology,
+           biggest first. Add class "own" to the fill for your own / play-relevant tech. -->
+      <div class="bar-row"><div class="bname">{{Kubernetes}}</div><div class="track"><div class="fill" style="width:100%"></div></div><div class="val">{{2,149}}</div></div>
+      <div class="bar-row"><div class="bname">{{Terraform}}</div><div class="track"><div class="fill own" style="width:59.7%"></div></div><div class="val">{{1,283}}</div></div>
+      <div class="bar-row"><div class="bname">{{Vault + Consul}}</div><div class="track"><div class="fill own" style="width:1.7%;min-width:4px"></div></div><div class="val">{{37}}</div></div>
+    </div>
+    <p class="sub-sub" style="margin-top:18px;margin-bottom:0">{{Secondary wedge: the whitespace
+       the bars reveal, a category they are hiring against with no incumbent named.}}</p>
+
+    <h3 class="sub-h">Evidence receipts</h3>
+    <p class="sub-sub">Every number above, with the link that proves it. This is what makes the brief
        usable in front of the customer.</p>
     <div class="tbl-wrap">
       <table class="receipts">
         <thead><tr><th>Claim</th><th>Figure</th><th>Source</th></tr></thead>
         <tbody>
-          <!-- Duplicate per claim. -->
+          <!-- Duplicate per claim. Internal-context rows cite the system ("Salesforce · opp 0065…"). -->
           <tr><td>{{Claim}}</td><td class="num">{{1,283}}</td><td><a class="lnk" href="{{SUMBLE_URL}}">{{Sumble · what it shows}}</a></td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
+  <!-- ============================================================ 6 · LIMITS & METHOD -->
   <div class="limits">
     <div class="limits-l">Limits &amp; method</div>
     <ul class="limits">
       <li>{{The filter that produced this: the exact query, window, and exclusions.}}</li>
-      <li>Reporting lines are inferred from shared signals (tech, function, team, title, location) —
+      <li>{{Internal context: which systems were connected and returned nothing (e.g. "HubSpot
+        connected, no record"), and which were never connected (e.g. "no call recordings"), so
+        an empty CRM is not mistaken for an unconnected one.}}</li>
+      <li>Reporting lines are inferred from shared signals (tech, function, team, title, location),
         the same 1–10 shown on each person's Sumble page. A suggested map, not a confirmed org chart.
         Verify before referencing anyone in outreach.</li>
       <li>Tech <em>used</em> is adoption; tech <em>mentioned</em> is a mention. Postings-only tools
-        are tagged as such above.</li>
-      <li>{{What this brief does not cover, and what would change the verdict.}}</li>
+        are tagged as such in Current status.</li>
+      <li>{{What would change the priority band, and what this brief does not cover.}}</li>
     </ul>
   </div>
 

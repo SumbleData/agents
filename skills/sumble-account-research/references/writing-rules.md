@@ -29,11 +29,17 @@ sharp rep, not a generated draft.
 One pass over the whole draft before you ship it. This is what separates a sharp brief
 from a generated one — don't skip it.
 
-- **Spoken lines carry no Sumble vocabulary.** Read every "call" line and every discovery
-  question aloud as if to the prospect. No "used/mentioned", no "N postings", no "Sumble
-  sees", no raw counts — the prospect has never heard of Sumble. Counts and used/mentioned
-  framing live **only** in the Signal box and stack tags (the analyst's voice, for the
-  rep's eyes). Reword every leak.
+- **Spoken lines assert a belief and cite nothing.** Read every call line, subject line
+  and message aloud as if to the prospect. "I saw you're hiring three platform engineers"
+  and "your job posts mention Terraform" tell the prospect they were looked up and start a
+  conversation about the source. Turn each observation into a belief about their
+  priorities: "I believe standardizing your platform tooling is a priority this year." If
+  the line names where you learned something (a posting, a profile, a signal, a count,
+  LinkedIn), rewrite it. The evidence lives in the evidence box, for the rep's eyes.
+- **Spoken lines carry no Sumble vocabulary.** No "used/mentioned", no "N postings", no
+  "Sumble sees", no raw counts — the prospect has never heard of Sumble. Counts and
+  used/mentioned framing live **only** in the evidence boxes and stack tags (the analyst's
+  voice, for the rep's eyes). Reword every leak.
 - **One move per call line.** If a line lists three things or the em-dash keeps going, cut
   to the single sharpest clause. "You've got two security orgs — Irving does X, Santiago
   does Y, Monterrey does Z…" is three lines pretending to be one.

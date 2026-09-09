@@ -1,0 +1,12 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sumble-territory-planning",
+  "description": "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial) and whether the segment line is a hard rule or should be calibrated from their data, pulls territory ownership from the CRM, and pulls per-rep\u00d7account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a self-contained, zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (Capture plus each rep's top 25 accounts by average in-segment rank, and a matching coverage table), a granular account view, highlights for accounts that are not being worked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle (with a live top-N strong-account cutoff), and a suggest\u2192accept/reject\u2192export flow that writes an actions.csv of approved owner changes.",
+  "author": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-territory-planning",
+  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "license": "MIT"
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sumble-account-research",
+  "description": "Research and prospect accounts using Sumble's MCP and other context auto-pulled from live connectors. Opens with a single question, fired before any tool call: deep dive on a specific account, or help me prioritize across my accounts (plus the account name for a deep dive). Output defaults to an account plan rendered as an interactive HTML brief. However, other outputs are also possible: outreach sequences, a deck for a meeting, call prep when the invocation asks for them.",
+  "author": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-account-research",
+  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "license": "MIT"
+}

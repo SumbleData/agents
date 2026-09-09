@@ -27,9 +27,13 @@ import sys
 
 import yaml
 
-# Directories inside a skill folder that are docs/marketing, not part of the
-# installable skill. Mirrors the exclusion in build-skill-zips.yml.
-EXCLUDE_DIRS = {"articles"}
+# Directories inside a skill folder that must not be vendored. "articles" is
+# docs/marketing, not part of the installable skill (mirrors the exclusion in
+# build-skill-zips.yml). ".claude-plugin" is the skill folder's own plugin.json
+# for the public marketplace; here the skill lands under plugins/<name>/skills/
+# and the plugin manifest is written at plugins/<name>/.claude-plugin/ instead,
+# so a nested copy would be a second, misplaced manifest.
+EXCLUDE_DIRS = {"articles", ".claude-plugin"}
 EXCLUDE_FILES = {".DS_Store"}
 
 # Deliberately NOT "sumble", which is the name the public marketplace in this

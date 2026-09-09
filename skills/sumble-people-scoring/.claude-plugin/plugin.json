@@ -1,0 +1,12 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sumble-people-scoring",
+  "description": "Build a people-scoring web app powered by Sumble data and optional first-party data. Interviews the user about their ICP (job functions + skills via GetMyCompanyProfile), then builds a SMALL calibration sample from ~5 user-named companies via the unified v6 REST endpoints (POST /v6/people) so the app is ready in minutes. Optional gold set (closed-won opportunity contacts) drives an Evaluation tab and a conservative regularized weight fit. Generates a self-contained, zero-dependency Python + HTML/JS app at people_scoring/{company}/ with real-time slider re-weighting, a score.csv superset sheet, plus a production score_leads.py that applies the calibrated weights to an entire enriched CRM.",
+  "author": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "homepage": "https://github.com/SumbleData/sumble-skills-public/tree/main/skills/sumble-people-scoring",
+  "repository": "https://github.com/SumbleData/sumble-skills-public",
+  "license": "MIT"
+}

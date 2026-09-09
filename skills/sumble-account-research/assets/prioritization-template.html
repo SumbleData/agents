@@ -11,18 +11,27 @@
   references/writing-rules.md.
 
   Section spine (keep this order):
-    Funnel -> Ranked board -> Scoring model -> Traps & dead zone -> Limits & method
+    Hero (thesis + ranking basis + tiles) -> Exec summary -> Funnel -> Why this list is
+    different -> Ranked board -> Scoring model -> Traps & dead zone -> Limits & method
 
   The detail for a top account expands INLINE on its own board row. There is no
   separate "account cards" section: a rep reads the ranking, stops at a name, and
   opens it where they are, instead of scrolling to find it again somewhere else.
-  Give the top 3-5 a `card` object; leave it off every other row.
+  Give the top 3-5 a `card` object; leave it off every other row. Each card follows
+  the deep dive's order in miniature: Status -> Priority -> Next step -> Data.
+
+  Priority bands are High / Medium / Low, driven by `tier` (1/2/3) so the pill's word
+  and its intensity always agree. The pill reads "High · 92": the band, then the score.
 
   Two rules that make this format work and are easy to skip:
     1. The ranking basis goes in the SUBTITLE, never buried. A rep must be able to
        argue with the method in the first five seconds.
     2. Accounts live in the ACCOUNTS array and render client-side, so filtering is
        instant and the file stays one portable .html.
+
+  Every line a rep says out loud (the card's angle) asserts a belief about the
+  prospect's priorities and cites nothing: no "I saw you're hiring", no counts, no
+  LinkedIn. Evidence lives in `evid`, for the rep's eyes.
 
   Self-contained: no build step, no external assets except the Google font. The
   Sumble mark is inlined by the publish step (see the Deliver section of
@@ -72,8 +81,22 @@ section{margin-top:48px}
 .sec-h{font-family:var(--font-display);font-size:19px;font-weight:600;letter-spacing:-.01em;margin-bottom:5px}
 .sec-sub{font-size:12.5px;color:var(--slate-500);margin-bottom:18px;max-width:74ch}
 
+/* exec summary: three lines a rep can act on alone. Same block as the deep dive. */
+.summary{margin-top:34px;background:var(--green-50);border:1px solid var(--green-200);border-left:3px solid var(--green-600);border-radius:10px;padding:15px 20px 12px}
+.summary-l{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green-700);margin-bottom:6px}
+.sum-row{display:grid;grid-template-columns:128px 1fr;gap:12px;padding:8px 0;border-top:1px solid var(--green-200);font-size:13.5px;color:var(--slate-800)}
+.sum-row:first-of-type{border-top:0}
+.sum-k{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--green-800);padding-top:3px}
+.sum-v b{font-weight:600;color:var(--slate-900)}
+
+/* priority band chip: one accent at three intensities. No rainbow. */
+.prio{display:inline-block;font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:20px;white-space:nowrap;vertical-align:middle;border:1px solid transparent}
+.prio.high{background:var(--green-600);color:#fff;border-color:var(--green-600)}
+.prio.med{background:var(--green-100);color:var(--green-800);border-color:var(--green-200)}
+.prio.low{background:var(--slate-100);color:var(--slate-600);border-color:var(--slate-200)}
+
 /* funnel: give the list a denominator */
-.funnel{display:flex;align-items:stretch;flex-wrap:wrap;background:var(--slate-900);border-radius:11px;overflow:hidden;margin-top:34px}
+.funnel{display:flex;align-items:stretch;flex-wrap:wrap;background:var(--slate-900);border-radius:11px;overflow:hidden;margin-top:28px}
 .fstep{flex:1 1 170px;padding:15px 22px;border-right:1px solid rgba(255,255,255,.08)}
 .fstep:last-child{border-right:0}
 .fstep-l{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.42);margin-bottom:5px}
@@ -108,10 +131,11 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 .co-meta{font-size:11px;color:var(--slate-400);margin-top:1px}
 .num{font-family:var(--font-mono);font-size:13px;font-variant-numeric:tabular-nums;color:var(--slate-700)}
 .num b{color:var(--slate-900)}
-/* score pill: one accent, intensity by tier. No rainbow. */
-.score{font-family:var(--font-mono);font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;background:var(--slate-100);color:var(--slate-600);border:1px solid var(--slate-200)}
+/* score pill: band word + score. One accent, intensity by tier. No rainbow. */
+.score{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;background:var(--slate-100);color:var(--slate-600);border:1px solid var(--slate-200);letter-spacing:.03em}
 .score.t1{background:var(--green-600);color:#fff;border-color:var(--green-600)}
 .score.t2{background:var(--green-100);color:var(--green-800);border-color:var(--green-200)}
+.score .sn{font-weight:500;opacity:.85;margin-left:5px}
 .tag{font-family:var(--font-mono);font-size:10px;padding:2px 7px;border-radius:5px;background:var(--slate-100);color:var(--slate-600);border:1px solid var(--slate-200);white-space:nowrap}
 .tag.hot{background:var(--green-50);color:var(--green-800);border-color:var(--green-200)}
 .tag.warn{background:var(--amber-100);color:var(--amber-700);border-color:var(--amber-200)}
@@ -127,7 +151,8 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 .factor-d{font-size:12px;color:var(--slate-600)}
 
 /* Expandable board rows. The detail for a top account lives ON its row, not in a
-   second section: a rep reads the ranking, stops at a name, and opens it in place. */
+   second section: a rep reads the ranking, stops at a name, and opens it in place.
+   The card follows the deep dive's order in miniature: Status -> Priority -> Next step -> Data. */
 .board tbody tr.brow.exp{cursor:pointer}
 .board tbody tr.brow.exp:hover{background:var(--slate-50)}
 .board tbody tr.brow.open{background:var(--slate-50)}
@@ -139,16 +164,20 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 .drow.open{display:table-row}
 .drow > td{padding:0;background:var(--slate-50);border-bottom:1px solid var(--slate-200)}
 .dcard{padding:4px 22px 20px 22px}
-.evid{background:var(--slate-50);border:1px solid var(--slate-200);border-left:3px solid var(--green-600);border-radius:8px;padding:13px 15px;margin-bottom:13px}
-.evid-l{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--green-700);margin-bottom:6px}
-.evid-t{font-size:13px;color:var(--slate-800)}
+.dc-block{padding:10px 0;border-top:1px solid var(--slate-200)}
+.dc-block:first-child{border-top:0}
+.dc-l{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--green-700);margin-bottom:5px}
+.dc-t{font-size:13px;color:var(--slate-800)}
+.dc-t .prio{margin-right:8px}
+.evid{background:#fff;border:1px solid var(--slate-200);border-left:3px solid var(--slate-300);border-radius:8px;padding:11px 14px}
+.evid-t{font-size:12.5px;color:var(--slate-700)}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .col-l{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--slate-400);margin-bottom:6px}
 .col p{font-size:12.5px;color:var(--slate-600)}
 .col p strong{color:var(--slate-900);font-weight:600}
 .call{font-style:italic;color:var(--green-800);font-weight:500}
 .people{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.pers{display:flex;flex-direction:column;gap:1px;border:1px solid var(--slate-200);border-radius:8px;padding:8px 11px;font-size:12px}
+.pers{display:flex;flex-direction:column;gap:1px;border:1px solid var(--slate-200);border-radius:8px;padding:8px 11px;font-size:12px;background:#fff}
 .pers .nm{font-weight:600}
 .pers .rl{font-size:11px;color:var(--slate-500)}
 .pers.entry{background:var(--green-50);border-color:var(--green-200)}
@@ -174,7 +203,7 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 .footer-logo{display:flex;align-items:center;gap:8px}.footer-logo img{width:18px;height:18px;display:block}
 .footer-logo span{font-family:var(--font-display);font-size:13px;font-weight:600;color:rgba(255,255,255,.7)}
 .footer-right{font-family:var(--font-mono);font-size:10px;color:rgba(255,255,255,.45);text-align:right;line-height:1.7}
-@media(max-width:640px){.nav{padding:12px 16px}.hero{padding:32px 20px}.page{padding:0 16px 60px}.cols{grid-template-columns:1fr}.acard-b{padding:16px}.footer{padding:20px}.acard-s{display:none}}
+@media(max-width:640px){.nav{padding:12px 16px}.hero{padding:32px 20px}.page{padding:0 16px 60px}.cols{grid-template-columns:1fr}.sum-row{grid-template-columns:1fr;gap:3px}.acard-b{padding:16px}.footer{padding:20px}.acard-s{display:none}}
 </style>
 </head>
 <body>
@@ -210,6 +239,27 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 
 <div class="page">
 
+  <!-- EXEC SUMMARY: the whole page in three lines. Must agree with the board. -->
+  <div class="summary">
+    <div class="summary-l">Exec summary</div>
+    <div class="sum-row">
+      <span class="sum-k">Where the book stands</span>
+      <div class="sum-v">{{<b>{{N}}</b> accounts in scope; {{n}} with a live relationship, {{n}} closed-lost
+        in the last 18 months, {{n}} never touched.}}</div>
+    </div>
+    <div class="sum-row">
+      <span class="sum-k">Priority</span>
+      <div class="sum-v">{{<b>{{n}} High</b>, {{n}} Medium, {{n}} Low. Top three: <b>{{Acme}}</b>,
+        <b>{{Beta}}</b>, <b>{{Gamma}}</b>, each with a dated trigger inside 90 days.}}</div>
+    </div>
+    <div class="sum-row">
+      <span class="sum-k">Next step</span>
+      <div class="sum-v">{{Work the top three this week: {{Acme}} via {{name, title}} on the {{play}}
+        play; {{Beta}} via {{name}}; {{Gamma}} via {{name}}. Cards below carry the angle and the
+        people.}}</div>
+    </div>
+  </div>
+
   <!-- FUNNEL: the list needs a denominator, or "top 20" means nothing. -->
   <div class="funnel">
     <div class="fstep">
@@ -232,7 +282,7 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
   <div class="insight">
     <div class="insight-l">Why this list is different</div>
     <p>{{The one thing Sumble knows that their CRM does not. Title normalization,
-       subsidiary rollups, tech confirmed in postings — name it and show it.}}</p>
+       subsidiary rollups, tech confirmed in postings: name it and show it.}}</p>
     <div class="chips">
       <span class="chip">{{Example → what it really is}}</span>
       <span class="chip plain">{{…and so on}}</span>
@@ -241,8 +291,8 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 
   <section>
     <h2 class="sec-h">Ranked board</h2>
-    <p class="sec-sub">{{One row per account. Every row earns its place with a reason, never a
-       bare score. The top few carry a full card that opens on the row.}}</p>
+    <p class="sec-sub">{{One row per account. Every row carries a priority band and a reason, never a
+       bare score. The top few carry a card that opens on the row.}}</p>
     <div class="controls">
       <span class="controls-l">Filter</span>
       <button class="filter-btn active" data-seg="all">All</button>
@@ -254,7 +304,7 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
       <table class="board">
         <thead><tr>
           <th>#</th><th>Account</th><th>Segment</th><th>{{Ranking metric}}</th>
-          <th>Score</th><th>Signals</th><th>Why it's on the list</th>
+          <th>Priority</th><th>Signals</th><th>Why it's on the list</th>
         </tr></thead>
         <tbody id="boardBody"></tbody>
       </table>
@@ -279,9 +329,9 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
       <div class="traps-l">Traps &amp; dead zone</div>
       <!-- What NOT to work, and why. This is the part a rep cannot get anywhere else,
            and the part that makes them trust the rest of the page. -->
-      <div class="trap"><b>{{Account or pattern}}</b> — {{why it scores well and still isn't worth
+      <div class="trap"><b>{{Account or pattern}}</b>: {{why it scores well and still isn't worth
         the call.}}</div>
-      <div class="trap"><b>{{Excluded segment}}</b> — {{what was filtered out and the reason, so
+      <div class="trap"><b>{{Excluded segment}}</b>: {{what was filtered out and the reason, so
         nobody re-litigates it.}}</div>
     </div>
   </section>
@@ -291,9 +341,11 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
     <ul class="limits">
       <li>{{The exact query: fields, window, thresholds, exclusions. Name the job function ids
         or technology slugs if that is what drove it.}}</li>
+      <li>{{Internal context: which systems were connected and returned nothing, and which were
+        never connected, so an empty CRM is not mistaken for an unconnected one.}}</li>
       <li>Counts are job-post derived. Tech <em>used</em> is adoption; tech <em>mentioned</em> is a
         mention.</li>
-      <li>{{Anything capped or truncated — a top-N cut, a sampled pool, a rank offset ceiling.
+      <li>{{Anything capped or truncated: a top-N cut, a sampled pool, a rank offset ceiling.
         Say what was dropped; silent truncation reads as full coverage.}}</li>
       <li>{{What would change the order, and what you would need to compute it.}}</li>
     </ul>
@@ -319,7 +371,7 @@ const ACCOUNTS = [
     seg:  "{{Segment}}",
     metric: "{{1,482}}",           // the ranking metric, pre-formatted
     score: 92,                      // 0-100 from the scoring model
-    tier: 1,                        // 1 = top tier, 2 = strong, 3 = watch
+    tier: 1,                        // 1 = High, 2 = Medium, 3 = Low
     tags: [                         // dated signals; kind: "hot" | "warn" | ""
       { t: "{{New VP Data · May 2026}}", kind: "hot" }
     ],
@@ -327,19 +379,30 @@ const ACCOUNTS = [
     url:  "{{https://sumble.com/orgs/<slug>/overview}}",
     // Optional. Present on the top 3-5 only; those rows become expandable in place.
     // Omit the whole key on every other row and it stays a plain row.
+    // The card is the deep dive in miniature, in the deep dive's order.
     card: {
-      evid:  "{{The counts and the dated signal, with the org and the strongest posting hyperlinked to Sumble.}}",
-      angle: "{{One sentence in the rep's voice: their situation, landing on the named product. No Sumble vocabulary.}}",
-      test:  "{{The discovery question. <strong>Bold</strong> the qualifier.}}",
-      // 1-3 names, entry point first (entry: true draws the green treatment).
+      // 1. Status: with you (CRM stage, last call, signups) and the stack that matters.
+      //    Cold: "No prior relationship. Not in the CRM." Say which it is.
+      status:   "{{Closed-lost Mar 2026 on price, no contact since. Runs Terraform and Splunk.}}",
+      // 2. Priority: why the band. One fit reason, one dated trigger. Never a bare score.
+      priority: "{{Score 92, top decile. New VP Platform started May 2026 and is hiring 6 engineers.}}",
+      // 3. Next step: the angle, the test, 1-3 people (entry point first, entry: true).
+      //    The angle asserts what you believe is a priority for them and cites nothing.
+      angle:    "{{One sentence in the rep's voice: what you believe is a priority for them, landing on the named product. No 'I saw', no counts, no Sumble vocabulary.}}",
+      test:     "{{The discovery question. <strong>Bold</strong> the qualifier.}}",
       people: [
         { nm: "{{Name}}", rl: "{{Title}}", li: "{{LINKEDIN_URL}}", su: "{{SUMBLE_PERSON_URL}}", entry: true }
-      ]
+      ],
+      // 4. Data: the counts and the dated signal, with the org and the strongest posting
+      //    hyperlinked to Sumble. Counts and sources live here, for the rep's eyes.
+      evid:     "{{The counts and the dated signal, with the org and the strongest posting hyperlinked to Sumble.}}"
     }
   }
 ];
 
 const tierClass = function (t) { return t === 1 ? "score t1" : t === 2 ? "score t2" : "score"; };
+const tierLabel = function (t) { return t === 1 ? "High" : t === 2 ? "Medium" : "Low"; };
+const prioClass = function (t) { return t === 1 ? "prio high" : t === 2 ? "prio med" : "prio low"; };
 const COLS = 7;   // keep in sync with the <thead> column count
 
 function cardHtml(a) {
@@ -355,13 +418,19 @@ function cardHtml(a) {
       + (links ? '<span class="plinks">' + links + "</span>" : "")
       + "</div>";
   }).join("");
+  // Status -> Priority -> Next step -> Data. Same order as the deep dive.
   return '<div class="dcard">'
-    + '<div class="evid"><div class="evid-l">Evidence</div><div class="evid-t">' + c.evid + "</div></div>"
-    + '<div class="cols">'
-    +   '<div class="col"><div class="col-l">The angle</div><p class="call">' + c.angle + "</p></div>"
-    +   '<div class="col"><div class="col-l">What to test</div><p>' + c.test + "</p></div>"
+    + '<div class="dc-block"><div class="dc-l">Status</div><div class="dc-t">' + (c.status || "") + "</div></div>"
+    + '<div class="dc-block"><div class="dc-l">Priority</div><div class="dc-t">'
+    +   '<span class="' + prioClass(a.tier) + '">' + tierLabel(a.tier) + "</span>" + (c.priority || "") + "</div></div>"
+    + '<div class="dc-block"><div class="dc-l">Next step</div>'
+    +   '<div class="cols">'
+    +     '<div class="col"><div class="col-l">The angle</div><p class="call">' + c.angle + "</p></div>"
+    +     '<div class="col"><div class="col-l">What to test</div><p>' + c.test + "</p></div>"
+    +   "</div>"
+    +   (ppl ? '<div class="people">' + ppl + "</div>" : "")
     + "</div>"
-    + (ppl ? '<div class="people">' + ppl + "</div>" : "")
+    + '<div class="dc-block"><div class="dc-l">Data</div><div class="evid"><div class="evid-t">' + c.evid + "</div></div></div>"
     + "</div>";
 }
 
@@ -387,7 +456,8 @@ function render(seg) {
       + "</td>"
       + '<td><span class="tag">' + a.seg + "</span></td>"
       + '<td class="num"><b>' + a.metric + "</b></td>"
-      + '<td><span class="' + tierClass(a.tier) + '">' + a.score + "</span></td>"
+      // Band word first, then the score that produced it: "High · 92".
+      + '<td><span class="' + tierClass(a.tier) + '">' + tierLabel(a.tier) + '<span class="sn">&middot; ' + a.score + "</span></span></td>"
       + '<td><div class="tags">' + tags + "</div></td>"
       + '<td><div class="why">' + a.why + "</div></td>"
       + "</tr>";

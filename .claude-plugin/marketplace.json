@@ -1,0 +1,46 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sumble",
+  "description": "Sumble's open GTM skills for Claude, Codex, and Cursor.",
+  "owner": {
+    "name": "Sumble",
+    "url": "https://sumble.com"
+  },
+  "plugins": [
+    {
+      "name": "sumble-account-research",
+      "source": "./skills/sumble-account-research",
+      "description": "Research and prospect accounts using Sumble's MCP and other context auto-pulled from live connectors. Opens with a single question, fired before any tool call: deep dive on a specific account, or help me prioritize across my accounts (plus the account name for a deep dive). Output defaults to an account plan rendered as an interactive HTML brief. However, other outputs are also possible: outreach sequences, a deck for a meeting, call prep when the invocation asks for them."
+    },
+    {
+      "name": "sumble-account-scoring",
+      "source": "./skills/sumble-account-scoring",
+      "description": "Build an account-scoring AND/OR whitespace web app powered by Sumble data and optional first-party data. One skill, three objectives: score the accounts in your CRM, find whitespace (high-ICP-fit orgs NOT in your CRM), or both in one ranked sheet. Interviews the user about their ICP, pulls data from internal systems and possibly Sumble MCP, and generates a self-contained, zero-dependency Python + HTML/JS app at account_scoring/{company}/ with real-time slider re-weighting, an account-category column + filters (customer / allocated / unallocated / whitespace), and an evaluation mechanism to tune the score. Outputs a config file describing the scoring method and a Python script that applies it across all accounts."
+    },
+    {
+      "name": "sumble-crm-cleaning",
+      "source": "./skills/sumble-crm-cleaning",
+      "description": "Build a CRM-cleaning review web app powered by Sumble data. Finds (1) potential duplicate accounts \u2014 CRM accounts that resolve to the SAME Sumble organization (Sumble's matcher is the only duplicate evidence; no domain or name-similarity matching) \u2014 and (2) missing or conflicting parent/subsidiary links, by matching every account to Sumble's organization graph via POST /v6/organizations (attributes incl. parent_id/subsidiary_ids \u2014 no SQL, no RunSqlQuery). Interviews the user about their CRM source and which checks to run, pulls the account list from internal systems or a CSV, and generates a self-contained, zero-dependency Python + HTML/JS review app at crm_cleaning/{company}/ with accept/reject/skip per finding, survivor selection for merges, and an actions.csv export of every approved CRM change."
+    },
+    {
+      "name": "sumble-direct-mail-audience",
+      "source": "./skills/sumble-direct-mail-audience",
+      "description": "Install and launch the supplied Marimo app for building direct-mail audiences near company offices. Use when a user wants to research company offices with Sumble and Parallel, select job functions and seniority, filter people by distance, or run the direct-mail audience notebook. Copies the fixed app template, helps save API keys to a local .env file, installs locked dependencies with uv, and returns a local Marimo URL."
+    },
+    {
+      "name": "sumble-mcp",
+      "source": "./skills/sumble-mcp",
+      "description": "Use Sumble MCP for account research, prospecting, people/job/technology searches, organization/contact list workflows, and Sumble MCP prompt or docs authoring. Use when Codex should follow Sumble MCP tool sequencing, query rules, and credit-management guardrails."
+    },
+    {
+      "name": "sumble-people-scoring",
+      "source": "./skills/sumble-people-scoring",
+      "description": "Build a people-scoring web app powered by Sumble data and optional first-party data. Interviews the user about their ICP (job functions + skills via GetMyCompanyProfile), then builds a SMALL calibration sample from ~5 user-named companies via the unified v6 REST endpoints (POST /v6/people) so the app is ready in minutes. Optional gold set (closed-won opportunity contacts) drives an Evaluation tab and a conservative regularized weight fit. Generates a self-contained, zero-dependency Python + HTML/JS app at people_scoring/{company}/ with real-time slider re-weighting, a score.csv superset sheet, plus a production score_leads.py that applies the calibrated weights to an entire enriched CRM."
+    },
+    {
+      "name": "sumble-territory-planning",
+      "source": "./skills/sumble-territory-planning",
+      "description": "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial) and whether the segment line is a hard rule or should be calibrated from their data, pulls territory ownership from the CRM, and pulls per-rep\u00d7account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a self-contained, zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (Capture plus each rep's top 25 accounts by average in-segment rank, and a matching coverage table), a granular account view, highlights for accounts that are not being worked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle (with a live top-N strong-account cutoff), and a suggest\u2192accept/reject\u2192export flow that writes an actions.csv of approved owner changes."
+    }
+  ]
+}

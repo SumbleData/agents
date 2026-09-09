@@ -74,6 +74,32 @@ flags are fictitious, opportunity counts removed).
 
 ## Install
 
+### Claude plugins
+
+Claude installs every skill in this repo as a plugin, straight from the repo, so
+you never download anything. In Claude Desktop, web, mobile, or Cowork, open
+**Customize > Plugins > Personal**, press **+**, choose **Add marketplace > Add
+from a repository**, and enter:
+
+```
+SumbleData/sumble-skills-public
+```
+
+Install the plugins you want, then open the marketplace's **...** menu and turn
+on **Sync**, so later changes to a skill reach you without a reinstall.
+
+Claude Code does the same from the terminal:
+
+```bash
+claude plugin marketplace add SumbleData/sumble-skills-public
+claude plugin install sumble-account-research@sumble
+```
+
+The plugin ids are the skill names: `sumble-account-research@sumble`,
+`sumble-account-scoring@sumble`, `sumble-crm-cleaning@sumble`,
+`sumble-direct-mail-audience@sumble`, `sumble-mcp@sumble`,
+`sumble-people-scoring@sumble`, `sumble-territory-planning@sumble`.
+
 ### `npx skills`
 
 Run one command for the skill you want. The `skills` CLI detects supported

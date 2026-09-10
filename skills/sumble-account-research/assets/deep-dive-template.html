@@ -131,10 +131,9 @@ section{margin-top:52px}
 .legend span{display:flex;align-items:center;gap:6px}
 .sw{width:10px;height:10px;border-radius:2px}
 
-/* the estate: confirmed vs postings-only */
+/* the estate: postings-only tools, under the confirmed-use bars */
 .stack-tags{display:flex;gap:6px;flex-wrap:wrap}
 .um{font-family:var(--font-mono);font-size:10px;font-weight:500;padding:3px 8px;border-radius:5px;white-space:nowrap}
-.um-strong{background:var(--green-50);color:var(--green-800);border:1px solid var(--green-200)}
 .um-weak{background:var(--slate-100);color:var(--slate-500);border:1px solid var(--slate-200)}
 
 /* three doors: never hand the rep one way in. Door 01 is the recommended start. */
@@ -223,13 +222,16 @@ section{margin-top:52px}
 .plinks a:hover{color:var(--green-700);border-color:var(--green-700)}
 .plinks .sep{color:var(--slate-300);margin:0 5px}
 .contact-name .plinks{margin-left:7px;font-weight:500}
-.orgtree{margin-top:15px}
-.orgtree-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--slate-400);margin-bottom:10px}
-.fan{margin-bottom:12px}
-.fan-anchor{display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 10px;background:var(--green-50);border:1px solid var(--green-200);border-radius:7px}
-.fan-anchor .nm{font-weight:600}
-.fan-anchor .tt{color:var(--slate-600)}
-.fan-anchor .plinks{margin-left:auto}
+/* Each contact carries its own fan: the row is the click target, the panel sits under it. */
+.contact-card{margin-bottom:6px}
+.contact-card .contact-row{margin-bottom:0;cursor:pointer}
+.contact-card.open .contact-row{border-color:var(--slate-300);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.contact-caret{font-size:8px;color:var(--slate-400);line-height:1}
+.contact-card.open .contact-caret{color:var(--green-700);transform:rotate(180deg)}
+.contact-fan{display:none;padding:9px 13px 11px;background:#fff;border:1px solid var(--slate-300);border-top:0;border-radius:0 0 8px 8px}
+.contact-card.open .contact-fan{display:block}
+.fan-hint{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--slate-400);margin-bottom:7px}
+.fan-more{font-size:11px;color:var(--slate-500);font-style:italic;margin:6px 0 0 30px}
 .fan-branch{margin:3px 0 0 17px;border-left:1.5px solid var(--slate-200);padding-left:13px}
 .fan-row{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11.5px;color:var(--slate-600);position:relative}
 .fan-row::before{content:"";position:absolute;left:-13px;top:50%;width:10px;height:1.5px;background:var(--slate-200)}
@@ -353,13 +355,31 @@ section{margin-top:52px}
     </div>
 
     <h3 class="sub-h">Their stack</h3>
-    <p class="sub-sub">Confirmed in their profile versus named only in postings. A person's listed
-       technology is their experience, not proof the company runs it. Lead with the tools that
-       matter to the play: yours, the competitor you displace, the complement you attach to.</p>
+    <p class="sub-sub">Confirmed use across {{the Finance org}}, biggest first. A person's listed
+       technology is their experience, not proof the company runs it, so the bars plot confirmed
+       use only. Accent the tools the play turns on: yours, the competitor you displace, the
+       complement you attach to.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--green-600)"></span>{{Your tech / the play}}</span>
+      <span><span class="sw" style="background:var(--slate-300)"></span>Context</span>
+    </div>
+    <div class="bars">
+      <!-- Values are job_post_used_count, never job_post_count. Widths are percentages of the
+           largest row. Scope to the function the play sells into, not the whole company:
+           section 5 is already the company-wide view. ~15 rows max. Add class "own" to the
+           fill for the tools that belong to the play. -->
+      <div class="bar-row"><div class="bname">{{SAP Ariba}}</div><div class="track"><div class="fill own" style="width:100%"></div></div><div class="val">{{236}}</div></div>
+      <div class="bar-row"><div class="bname">{{Coupa}}</div><div class="track"><div class="fill" style="width:24.6%"></div></div><div class="val">{{58}}</div></div>
+      <div class="bar-row"><div class="bname">{{NetSuite}}</div><div class="track"><div class="fill own" style="width:3.4%;min-width:4px"></div></div><div class="val">{{8}}</div></div>
+    </div>
+    <p class="sub-sub" style="margin-top:16px;margin-bottom:0">{{One line on what the SHAPE
+       shows, not a restatement of the values: "one sourcing suite carrying real weight, four
+       smaller tools underneath it, and nothing holding the contracts".}}</p>
+
+    <p class="sub-sub" style="margin-top:16px">Named in postings, never confirmed in use. No
+       confirmed count, so no bar.</p>
     <div class="stack-tags">
-      <!-- um-strong = confirmed adopted. um-weak = competitor / displacement, or postings-only. -->
-      <span class="um um-strong">{{Confirmed tech}}</span>
-      <span class="um um-weak">{{Competitor / postings-only}}</span>
+      <span class="um um-weak">{{Mentioned-only tool}}</span>
     </div>
   </section>
 
@@ -460,64 +480,71 @@ section{margin-top:52px}
       </div>
       <div class="bg-path"><span class="k">Path in</span>{{champion}} (champion) → {{economic buyer}} (economic buyer)</div>
     </div>
-    <div class="contacts-label">In order</div>
+    <div class="contacts-label">In order · click a row for who rolls up to them</div>
     <!-- 2-3 people, best first. Every row carries: a rank, LinkedIn + the API's sumble_url,
          a role chip, a CRM-status chip, and a fit score.
          CRM status comes straight from the API brief's "(CRM Status: Contact / Lead)" or
          "(No matching CRM record)". Use class "crm white" for no match, because an unknown
          name at a live account is whitespace the rep should see, not a blank.
          Fit score is the person's score from the same source. Omit the chip rather than
-         guess a number. -->
-    <div class="contact-row">
-      <span class="contact-rank">01</span>
-      <div class="contact-av">{{IN}}</div>
-      <div class="contact-info">
-        <div class="contact-name">{{Full Name}}<span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
-        <div class="contact-title">{{Verified current title}} · started {{Mon YYYY}}</div>
-        <div class="contact-loc">{{Location · why this person, and why they're first}}</div>
-        <div class="contact-meta">
-          <span class="crm">{{In CRM · Contact}}</span>
-          <span class="fit">Fit {{82}}</span>
+         guess a number.
+         ONE list, not two: each .contact-row sits in a .contact-card and is followed by
+         exactly one .contact-fan holding that person's reports. Rows are direct_reports from
+         FindMatchAndEnrichPeople match mode, related_people:{direction:["direct_reports"],
+         attributes:["name",...,"confidence"]} — request "name" explicitly or every report
+         comes back null. Rank = ceil(confidence.score*100)/10. Top 6, then a .fan-more line
+         on what is below the fold. No mapped reports -> .fan-none saying what that implies. -->
+    <div class="contact-card">
+      <div class="contact-row" onclick="toggleFan(this,event)">
+        <span class="contact-rank">01</span>
+        <div class="contact-av">{{IN}}</div>
+        <div class="contact-info">
+          <div class="contact-name">{{Full Name}}<span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
+          <div class="contact-title">{{Verified current title}} · started {{Mon YYYY}}</div>
+          <div class="contact-loc">{{Location · why this person, and why they're first}}</div>
+          <div class="contact-meta">
+            <span class="crm">{{In CRM · Contact}}</span>
+            <span class="fit">Fit {{82}}</span>
+          </div>
+        </div>
+        <div class="contact-chips">
+          <span class="contact-role">{{Economic buyer / Champion}}</span>
+          <span class="contact-caret">▼</span>
         </div>
       </div>
-      <div class="contact-chips">
-        <span class="contact-role">{{Economic buyer / Champion}}</span>
-      </div>
-    </div>
-    <!-- Whitespace variant: nobody in the CRM has this person. -->
-    <div class="contact-row">
-      <span class="contact-rank">02</span>
-      <div class="contact-av">{{IN}}</div>
-      <div class="contact-info">
-        <div class="contact-name">{{Full Name}}<span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
-        <div class="contact-title">{{Verified current title}} · started {{Mon YYYY}}</div>
-        <div class="contact-loc">{{Location · why this person}}</div>
-        <div class="contact-meta">
-          <span class="crm white">Not in CRM</span>
-          <span class="fit">Fit {{74}}</span>
-        </div>
-      </div>
-      <div class="contact-chips">
-        <span class="contact-role multi">Multithread</span>
-      </div>
-    </div>
-
-    <div class="orgtree">
-      <div class="orgtree-label">Who rolls up to them · Sumble confidence 1–10</div>
-      <!-- ONE .fan per contact, no exceptions. Rows are direct_reports from
-           FindMatchAndEnrichPeople match mode, related_people:{direction:["direct_reports"],
-           attributes:[...,"confidence"]}. Rank = ceil(confidence.score*100)/10. Top ~5.
-           No mapped reports or a noisy line -> .fan-none saying why. Self-check before
-           delivering: count(.contact-row) == count(.fan). -->
-      <div class="fan">
-        <div class="fan-anchor"><span class="nm">{{Name}}</span> · <span class="tt">{{Title}}</span><span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
+      <div class="contact-fan">
+        <div class="fan-hint">Who rolls up to them · Sumble confidence 1–10, inferred</div>
         <div class="fan-branch">
           <div class="fan-row"><span class="fan-dir">▼</span><span class="fan-rank">{{6.5}}</span><span class="nm">{{Name}}</span> · <span class="tt">{{Title}}</span><span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
         </div>
+        <div class="fan-more">{{What is below the fold, and whether any of it is worth the rep's
+          attention: "nine more under 3.0, mostly ICs; {{Name}} scores lower but owns the
+          contract workflow".}}</div>
       </div>
-      <div class="fan">
-        <div class="fan-anchor"><span class="nm">{{Name}}</span> · <span class="tt">{{Title}}</span><span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
-        <div class="fan-none">{{No reports mapped in Sumble. Reach directly, or warm-intro via the champion.}}</div>
+    </div>
+    <!-- Whitespace variant: nobody in the CRM has this person, and nobody maps under them. -->
+    <div class="contact-card">
+      <div class="contact-row" onclick="toggleFan(this,event)">
+        <span class="contact-rank">02</span>
+        <div class="contact-av">{{IN}}</div>
+        <div class="contact-info">
+          <div class="contact-name">{{Full Name}}<span class="plinks"><a href="{{LINKEDIN_URL}}">LinkedIn</a><span class="sep">·</span><a href="{{SUMBLE_PERSON_URL}}">Sumble</a></span></div>
+          <div class="contact-title">{{Verified current title}} · started {{Mon YYYY}}</div>
+          <div class="contact-loc">{{Location · why this person}}</div>
+          <div class="contact-meta">
+            <span class="crm white">Not in CRM</span>
+            <span class="fit">Fit {{74}}</span>
+          </div>
+        </div>
+        <div class="contact-chips">
+          <span class="contact-role multi">Multithread</span>
+          <span class="contact-caret">▼</span>
+        </div>
+      </div>
+      <div class="contact-fan">
+        <div class="fan-hint">Who rolls up to them · Sumble confidence 1–10, inferred</div>
+        <div class="fan-none">{{Nobody maps under them, and at {{N}} employees that says
+          {{what it implies}} rather than that the data is missing.}}</div>
       </div>
     </div>
 
@@ -641,6 +668,9 @@ section{margin-top:52px}
 </footer>
 
 <script>
+/* The row is the click target; the guard keeps LinkedIn and Sumble links clickable. */
+function toggleFan(el,e){if(e&&e.target.closest('a'))return;
+  el.parentElement.classList.toggle('open');}
 function togglePlay(el){const b=el.nextElementSibling;el.classList.toggle('open');b.classList.toggle('open');}
 function setFilter(play,btn){
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));

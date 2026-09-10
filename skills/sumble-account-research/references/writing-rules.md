@@ -40,6 +40,27 @@ from a generated one — don't skip it.
   "Sumble sees", no raw counts — the prospect has never heard of Sumble. Counts and
   used/mentioned framing live **only** in the evidence boxes and stack tags (the analyst's
   voice, for the rep's eyes). Reword every leak.
+- **Machinery stays in Limits & method.** The body of the brief states findings; it does
+  not narrate where they came from. Strip references to the seller's Sumble profile, to what
+  the sales-play list contains, to which tools returned or failed to return data, and to what
+  Sumble does or does not hold. Rewrite, don't delete: the finding survives, the provenance
+  clause goes.
+
+  | Before | After |
+  | --- | --- |
+  | "SAP Ariba is a named legacy competitor in your own profile" | "SAP Ariba is a legacy competitor" |
+  | "NetSuite and Ramp are both complements in Zip's own profile" | "NetSuite and Ramp both integrate with Zip" |
+  | "which is the profile's first sales play stated literally" | name the behavior: "which means approvals happen in DMs" |
+  | "Sumble holds no curated team here, so the roster link points at the whole org" | say nothing; just link the roster |
+  | "Reporting lines were not retrievable in this session" | "Reporting lines aren't available" |
+  | "Play names are the seller's own, from the positioning their team maintains in Sumble" | describe what the section is: "Three angles into the same account, each with the evidence behind it and the line to open on" |
+
+  Three exceptions, because there the absence is itself the finding: the "With you" status
+  line may say no internal systems were connected, `.fan-none` may say reporting lines aren't
+  available, and the Raw data appendix may qualify counts as Sumble-observed. Everything else
+  about method — which tools ran, which failed, whose ICP the workspace reflects, what could
+  not be seen — belongs in Limits & method, and belongs there in full. This rule tightens the
+  body copy. It does not reduce what gets disclosed.
 - **One move per call line.** If a line lists three things or the em-dash keeps going, cut
   to the single sharpest clause. "You've got two security orgs — Irving does X, Santiago
   does Y, Monterrey does Z…" is three lines pretending to be one.

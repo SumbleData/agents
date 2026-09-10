@@ -2,7 +2,9 @@
 
 One account, one page, one argument. Template: `assets/deep-dive-template.html`. Fill the
 `{{TOKENS}}` and duplicate the repeating blocks. Build from research you already ran in
-Step 2; no new queries. Hold every line to `references/writing-rules.md`.
+Step 2; no new queries. Hold every line to `references/writing-rules.md`, including its
+machinery rule: the body states findings, never where they came from. Method goes in section
+6, in full.
 
 Use this when the seller is working one named account. For a book of accounts, use
 `references/prioritization-brief.md` instead. The two are a matched pair: same visual system,
@@ -23,7 +25,7 @@ that produced it comes after. Keep this order.
 | # | Section | What it has to do | Fed by |
 |---|---|---|---|
 | 1 | Exec summary | Thesis, 3-4 numbers, then three lines a rep can act on alone: where it stands, the priority, the next step | What's the Angle, plus your reading of the internal context |
-| 2 | Current status | What has already happened between the seller and this account, and what the account runs today | CRM, call notes, product analytics, past comms; The Intel for the stack |
+| 2 | Current status | What has already happened between the seller and this account, and what the account runs today | CRM, call notes, product analytics, past comms; `GetOrganizationTechStack`'s `job_post_used_count` for the stack |
 | 3 | Priority | High, Medium or Low, and the fit and trigger reasons that set it | Sumble score, signals, the profile, the internal context |
 | 4 | Next step | Why now, the ways in, who to contact first, the plays, the copy-ready messages | Recent Changes, Which Teams Are The Best Fit, Who To Contact First, the seller's own plays |
 | 5 | Raw data | The signal footprint as bars, and every number as a receipt with its link | The Intel |
@@ -123,13 +125,36 @@ never connected, so nobody mistakes an unconnected CRM for a clean one.
 
 The technical state of the account today, the way the timeline is the commercial state.
 Confirmed adoption versus tools named only in postings. The API brief does not draw this
-line, so draw it here.
+line, so draw it here, as bars: a row of chips flattens 2,285 and 2 into the same pill.
 
 **Tech `used` is adoption; tech `mentioned` is a mention.** A person's listed technology is
-their experience, not proof the company runs it. Tag confirmed tools `um-strong` and
-postings-only or competitor tools `um-weak`, and say so in the sub-line. Lead with the tools
-that matter to the play: yours if they already run it, the competitor you displace, the
-complement you attach to.
+their experience, not proof the company runs it.
+
+- **Bars plot `job_post_used_count`** from `GetOrganizationTechStack`, never
+  `job_post_count`. A mention gets no bar, because there is no confirmed count to plot. That
+  is what makes the used-versus-mentioned line visible instead of asserted, which is the
+  point of the block. Mentioned-only tools go in the small `.stack-tags` row under the bars.
+- **Scope the chart to the estate the play sells into** — the Finance or other relevant
+  business function, not the whole company. Section 5's signal footprint is already the
+  company-wide view, and two near-identical charts on one page read as padding.
+- **Biggest first, roughly 15 rows at most**, past which the chart stops being readable.
+  Accent (`fill own`) the tools that belong to the play: yours, the competitor being
+  displaced, the complement being attached to. Grey for context.
+- **One line after the bars on what the shape shows**, not a restatement of the values. "One
+  sourcing suite carrying real weight, four smaller tools underneath it, and nothing holding
+  the contracts" rather than "Ariba has 236 posts."
+
+**Check the domain before you call anything confirmed.** Open the technology's linked domain
+in the tech-stack result and confirm it is the company you think it is. Short product names
+collide with generic computing terms and get matched out of job-post text: researching for
+Zip (ziphq.com), Clay's Procurement stack showed "Zip" with one confirmed use, linked to
+`pkware.com/technology/zip` — the archive format, from a posting that mentioned zip files.
+
+Be conservative about the seller's own product specifically. A single confirmed post is thin
+evidence of a customer relationship at the best of times, and the brief cannot see the
+seller's CRM or product analytics to corroborate it. Unless the domain checks out **and** the
+footprint is substantial, say the account may already have some presence and point the rep at
+their own systems to confirm. Never state a relationship the brief cannot see.
 
 ## 3. Priority
 
@@ -145,7 +170,7 @@ account deserves, so define it by what happens next:
   Park it, and say what would move it up.
 
 Then the why, in two short columns, **Fit** and **Trigger**. Fit reasons come from the
-profile and the Sumble score: employee count against the ICP, the tech and functions that
+profile and, when it belongs to this seller (SKILL.md Step 1c), the Sumble score: employee count against the ICP, the tech and functions that
 match, the account score with its denominator. Trigger reasons are dated events: a hiring
 push against the problem you solve, a champion move, a signup, a funding round. Two to four
 lines total. Keep the two columns distinct, because an account with weak fit and a hot
@@ -209,29 +234,47 @@ related_people:  { direction: ["direct_reports"],
                    attributes: ["name","job_title","job_level","linkedin_url","confidence"] }
 ```
 
-Three things about that call, each of which is a hard validation error rather than a warning:
-`confidence` is valid **only** inside `related_people`; `person_score` is filter-mode only,
-so it cannot appear in match mode at all; and omitting the inner `attributes` returns bare
-ids with no names and no scores.
+Match mode only: filter mode does not support `related_people` at all. Three things about
+that call, each a hard validation error rather than a warning: `confidence` is valid **only**
+inside `related_people`; `person_score` is filter-mode only, so it cannot appear in match
+mode at all; and omitting the inner `attributes` returns bare ids with no names and no
+scores. Request `name` inside `related_people.attributes` explicitly — it is free, but it is
+not returned by default, and without it every report comes back with a null name.
 
-**Both links per person.** LinkedIn *and* the `sumble_url` the API returns, on anchor rows
+**Both links per person.** LinkedIn *and* the `sumble_url` the API returns, on contact rows
 and fan rows alike. The Sumble page is where the rep sees the full confidence-scored roll-up.
 
 **The score.** `.fan-rank` is each related person's `confidence.score`, a 0-1 float at the
 **top level** of the report object, not under `attributes`. Convert to the web app's 1-10
 exactly: `ceil(score*100)/10`, so `0.3865` becomes `3.9` and `0.4654` becomes `4.7`. Rank
-each contact's reports by score and show the top five.
+each contact's reports by score, print the score on every row, and show the top six. Then one
+italic `.fan-more` line naming what is below the fold and whether anything down there is
+worth the rep's attention: a lower-scoring report with a more relevant title belongs in that
+line, not reordered above the score. State once in Limits & method that these relationships
+are inferred from org structure and seniority rather than actual reporting lines, so a low
+score is a lead to check, not a fact.
 
 **Direction.** Use `direct_reports` only. The `managers` direction is near-empty for senior
 contacts, because a CXO rarely has an inferred manager, so never render an empty upward fan.
 Express the path to the buyer in the `.bg-path` prose instead.
 
-**Every listed contact gets a block, no silent omissions.** For each contact render either
-their own `.fan` with rows, or a `.fan-none` note saying why there isn't one: no reports
-mapped in Sumble, shown as a report under someone above, or the line is already on another
-card. A noisy or off-target line (common for CXOs) gets a `.fan-none` too. Never pad a fan
-with people who don't belong in it. **Self-check before delivering: per card, the count of
-`.contact-row` blocks must equal the count of `.fan` blocks.**
+**One list, not two.** Each contact carries its own fan, folded into that contact's
+`.contact-card` and opened by clicking the row. There is no separate roll-up block. Every
+`.contact-row` is followed by exactly one `.contact-fan`, holding either a `.fan-branch` with
+rows or a `.fan-none` saying why there isn't one: nobody mapped, shown as a report under
+someone above, or the line is already on another card. A noisy or off-target line (common for
+CXOs) gets a `.fan-none` too. Never pad a fan with people who don't belong in it.
+
+**An empty fan is a finding, not a gap.** Say what it implies at that company size — nobody
+mapped under the VP of Finance at 200 people means that person is the function — rather than
+only noting the absence.
+
+**Read the fans against each other before you write them.** Two anchors sharing most of one
+fan means at least one is wrong: say which one you believe and why. An anchor who turns up
+inside another anchor's fan is a real signal about proximity, so call it out rather than
+quietly dropping the row. Watch for duplicate profiles too — the same person comes back twice
+under different `person_id`s with near-identical titles. Dedupe before display and note it in
+Limits.
 
 **Anchoring the team.** Use a real, navigable Sumble team, taken from the team that recurs
 across your contacts' `confidence.matched_features` with `match_type:"team"`. Roster link is
@@ -328,6 +371,33 @@ caveat, the used-versus-mentioned caveat, and two things this version adds:
   from an unconnected one.
 - **What would change the priority band.** The same line as the end of section 3, so a rep
   who only reads the top and the bottom still sees it.
+- **Whose ICP the numbers reflect.** When the brief is for a seller who doesn't own the
+  Sumble workspace, say that the account score, the CRM status and the intelligence brief
+  were excluded because they describe the workspace owner's relationship with the account,
+  not this seller's.
+- **Which account you resolved**, whenever the name was ambiguous. Resolve it with a cheap
+  match-mode call (free attributes only, passing a `url` where one can be inferred) before
+  spending anything on enrichment, then name the entity here: "clay-hq (clay.com, the GTM
+  data company)". A rep reading the brief for a different Clay should find that out
+  immediately, not three sections in.
+- **Any count that disagrees with public sources**, with both figures. Sumble's
+  `employee_count` understates large employers and fast-growing private companies — Clay came
+  back at 751 observed against roughly 1,480 third-party. Never silently pick one: lead the
+  brief with the growth percentages, which are internally consistent, and put the
+  disagreement here.
+
+## Before you render
+
+Three checks, each on something that has shipped wrong:
+
+- **Every `.contact-row` sits inside a `.contact-card` and is followed by exactly one
+  `.contact-fan`.**
+- **Every technology reported as confirmed has had its linked domain opened and checked**,
+  the seller's own product first.
+- **Every sentence about what could not be retrieved is re-verified against what the run
+  actually ended up with.** A limitation written after the first tool failure is a claim
+  about the run, and a later retry may have already disproved it. Stale limitations are the
+  cheapest thing in the brief for a reader to catch.
 
 ## Deliver
 

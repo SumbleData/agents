@@ -51,12 +51,38 @@ round trip:
 - `FindMatchAndEnrichPeople` **match mode**: `confidence` is valid only inside
   `related_people`, and `person_score` is filter-mode only, so neither belongs in the
   top-level `attributes`. Omitting the inner `related_people.attributes` returns bare ids
-  with no names and no scores.
+  with no names and no scores, and `name` has to be listed there explicitly — it is free,
+  but it is not returned by default. `related_people` is match-mode only; filter mode
+  doesn't support it.
 - `technology_category` entities accept only `job_post_count`,
   `job_post_count_growth_1y`, `people_count`, `team_count`. `job_post_used_count` is
   valid on a `technology` entity but not on a category.
 - `order_by_column: "people_concentration"` and `"people_count_growth_1y"` both require
   `order_by_job_function`.
+
+**Signals are workspace-shaped.** `GetOrganizationSignals` and `SearchSignals` are filtered
+by the workspace's signal configs, and every `sales_angle` is written for the workspace
+owner. Researching for a different seller, most of the feed is irrelevant — typically GTM and
+sales-leadership hires. Read it, keep the handful that survive on their own facts, discard
+the rest, and never let `sales_angle` text reach the brief. Don't pad "Why now" to fill the
+section: if one signal survives, one is what you write, and public sources carry the rest.
+
+**Retry before you write a limitation.** An auth or approval error from an MCP tool is
+frequently transient, so retry the tool once later in the run before writing any sentence
+saying a capability was unavailable. A first failure is not a fact about the session. And
+never let a stale limitation ship: every sentence describing what could not be retrieved is a
+claim about the run, and it gets re-verified against what the run actually ended up with
+before final render.
+
+**SQL as a stand-in for filter-mode people search.** When `FindMatchAndEnrichPeople` is
+unavailable, `RunSqlQuery` over `people_info` substitutes: `name`, `current_title`,
+`job_level`, `job_level_rank`, `location`, `linkedin_url`, `current_experience_date_from`,
+joined to `organizations` on `organization_id`. Two gotchas. `job_level_rank` ascends from
+Individual Contributor, so senior people need `ORDER BY job_level_rank DESC` or a direct
+`job_level` filter. And there is no manager or reporting relationship anywhere in the SQL
+schema: reporting fans come only from `related_people` in match mode, so if that tool is
+genuinely down the fans don't exist and the brief says so. `information_schema`
+introspection is blocked; use `ListTables`.
 
 **Cost discipline.** Free tools liberally; tighten org filters before enriching;
 one cheap jobs pass to find the why-now, then full `description` + `related_people`

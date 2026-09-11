@@ -3,9 +3,10 @@
 Deterministic: same spec + same data.calibration-info.json -> byte-identical
 config.json. The policy constants live HERE, not in agent prompts:
 
-  * Weights, Sumble-only:     jf 38 / seniority 46 / skills 16
-    (mirrors Sumble's internal people score without the Account factor).
-  * Weights, with N 1P signals: the Sumble factors keep their 38/46/16 ratio
+  * Weights, Sumble-only:     jf 70.4 / skills 29.6 (seniority is folded into
+    jf_score's min-at-IC -> max-at-CXO interpolation, not a standalone factor
+    -- see the "drop Seniority factor" note below).
+  * Weights, with N 1P signals: the Sumble factors keep their 70.4/29.6 ratio
     scaled to 75; the remaining 25 splits evenly across the 1P signals.
   * No ICP skills: the skills weight drops and the rest renormalise.
   * JF ranges: ICP personas tier `key` -> (0.55, 0.95); tier `other`/unset ->
@@ -24,7 +25,13 @@ import json
 from pathlib import Path
 
 # --- Policy constants -----------------------------------------------------------
-SUMBLE_WEIGHTS = {"jf": 38.0, "seniority": 46.0, "skills": 16.0}
+# jf 70.4 / skills 29.6 -- the 2026-07-20 "drop Seniority factor" change
+# (score_sheet.py / score_leads.py / app.js) removed the standalone Seniority
+# weight (it double-counted seniority, already baked into jf_score) and
+# renormalized the old jf 38 / seniority 46 / skills 16 split to these two.
+# This constant has to match that renormalization -- there is no "seniority"
+# key anywhere below, or config.json ships a slider the app silently ignores.
+SUMBLE_WEIGHTS = {"jf": 70.4, "skills": 29.6}
 ONE_P_TOTAL_PCT = 25.0  # with 1P signals, Sumble factors scale to 100 - this
 KEY_JF_RANGE = (0.55, 0.95)
 OTHER_JF_RANGE = (0.50, 0.85)
@@ -33,7 +40,6 @@ SKILL_CAP = 5
 
 WEIGHT_LABELS = {
     "jf": "Job Function (%)",
-    "seniority": "Seniority (%)",
     "skills": "Skills (%)",
 }
 

@@ -106,7 +106,8 @@ Skills are API-sourced too: the people endpoint's `technologies` attribute
 
 ## Policy constants
 
-- Weights (Sumble-only): **jf 38 / seniority 46 / skills 16**; with N 1P
+- Weights (Sumble-only): **jf 70.4 / skills 29.6** (no standalone Seniority
+  factor — it's folded into `jf_score`'s interpolation); with N 1P
   signals the Sumble factors scale to 75 and the 25 splits evenly. No ICP
   skills → the skills weight drops and the rest renormalise.
 - JF ranges: ICP `key` (0.55, 0.95); ICP `other`/unset (0.50, 0.85);

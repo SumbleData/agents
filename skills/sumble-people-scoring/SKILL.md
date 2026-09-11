@@ -181,7 +181,6 @@ same schema for the full CRM in production (Stage 5).
 ```
 seniority_frac  = job_level_rank / max_job_level_rank
 jf_score        = jf_range[jf].min + (jf_range[jf].max - jf_range[jf].min) * seniority_frac
-seniority_score = seniority_frac
 skill_score     = min(skill_count, skill_cap) / skill_cap   # default cap = 5
 1p_score        = {signal}_norm   # pre-normalised at merge time
 total           = Σ (weight_pct/100) * factor_score
@@ -189,13 +188,16 @@ total           = Σ (weight_pct/100) * factor_score
 
 Weights sum to 100%. `job_level_rank` comes from the canonical job-level map
 baked into `_build/sumble_v6.py` (the endpoint returns level *names* only;
-IC 0 … CXO 18).
+IC 0 … CXO 18). There is no standalone Seniority weight/factor — seniority
+only acts through `jf_score`'s min-at-IC → max-at-CXO interpolation above. An
+earlier version had a separate Seniority slider; it was removed because it
+double-counted the same signal already baked into `jf_score`.
 
 ### Default weights + calibration
 
 **Two-step weighting: policy priors, then a regularized fit to gold.**
 `build_config.py` lays down the policy defaults (Sumble-only:
-`jf=38 / seniority=46 / skills=16`; with 1P signals those scale to 75% and
+`jf=70.4 / skills=29.6`; with 1P signals those scale to 75% and
 the 1P signals split the remaining 25%; no ICP skills → the skills weight
 drops and the rest renormalise). `fit_weights.py` then nudges ONLY the
 factor blend toward separating the gold contacts — without overfitting:

@@ -2,7 +2,7 @@
 
 Runs AFTER build_config.py. Reads config.json (default weights = policy
 priors) plus data.csv (with `is_icp_gold`), and nudges ONLY the top-level
-factor blend (jf / seniority / skills / 1P signals) toward better separation
+factor blend (jf / skills / 1P signals) toward better separation
 of the gold people — deliberately a little, not a lot. The per-JF ranges are
 FROZEN: that's where overfitting would otherwise live, exactly like the
 frozen within-category weights in the account-scoring fit.
@@ -61,6 +61,9 @@ def _f(val: object, default: float = 0.0) -> float:
 
 
 def factor_scores(row: dict, config: dict) -> dict[str, float]:
+    # `config["seniority"]` (rank_column/max_rank_column) only feeds jf_score's
+    # interpolation below -- there is no standalone seniority factor/weight
+    # (dropped 2026-07-20; it double-counted seniority already baked into jf).
     sen = config.get("seniority", {})
     rank = _f(row.get(sen.get("rank_column", "job_level_rank")))
     max_rank = _f(row.get(sen.get("max_rank_column", "max_job_level_rank")))
@@ -75,7 +78,7 @@ def factor_scores(row: dict, config: dict) -> dict[str, float]:
     cap = config.get("skill_cap", 5) or 5
     skill_score = min(_f(row.get("skill_count")), cap) / cap
 
-    out = {"jf": jf_score, "seniority": sen_frac, "skills": skill_score}
+    out = {"jf": jf_score, "skills": skill_score}
     for sig in config.get("one_p_signals", []) or []:
         key = sig.get("weight_key") or f"1p_{sig.get('key')}"
         out[key] = _f(row.get(sig.get("norm_column") or f"{sig.get('key')}_norm"))

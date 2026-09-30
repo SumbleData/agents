@@ -13,7 +13,9 @@
     1 Exec summary     hero (thesis, lede, stat tiles) + the three-line summary box
     2 Current status   "With you" timeline (skip when empty; one plain line instead) + Their stack
     3 Priority         High / Medium / Low chip, Fit and Trigger reasons, what would change it
-    4 Next step        Why now -> Ways in -> Who to contact first -> The plays -> Messaging
+    4 Next step        Why now -> Ways in -> Who to contact first -> The plays
+                       -> Battlecards (only when a competitor with one is confirmed in the stack)
+                       -> Messaging
     5 Raw data         Signal footprint + Evidence receipts
     6 Limits & method
 
@@ -190,6 +192,21 @@ section{margin-top:52px}
 .col p strong{color:var(--slate-900);font-weight:600}
 .call{font-style:italic;color:var(--green-800);font-weight:500}
 .proof{display:block;margin-top:6px;font-family:var(--font-mono);font-size:10.5px;color:var(--slate-500);font-style:normal}
+
+/* battlecards: conditional block, one card per competitor confirmed in the stack that the
+   seller has a battlecard for. Amber, because it is the seller's own text, not Sumble data. */
+.bcards{display:flex;flex-direction:column;gap:10px}
+.bcard{border:1px solid var(--slate-200);border-left:3px solid var(--amber-700);border-radius:11px;padding:15px 19px;background:#fff}
+.bc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:11px}
+.bc-tech{font-family:var(--font-display);font-size:14px;font-weight:600;letter-spacing:-.01em}
+.bc-cat{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--amber-700);background:var(--amber-50);border:1px solid var(--amber-200);border-radius:99px;padding:2px 8px}
+.bc-foot{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--slate-500);white-space:nowrap}
+.bc-l{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--slate-400);margin-bottom:5px}
+.bc-arg{background:var(--amber-50);border:1px solid var(--amber-200);border-radius:8px;padding:12px 14px;margin-bottom:12px}
+.bc-arg p{font-size:13px;color:var(--slate-800);font-style:italic}
+.bc-src{display:block;margin-top:6px;font-family:var(--font-mono);font-size:10.5px;color:var(--slate-500);font-style:normal}
+.bc-play p{font-size:12.5px;color:var(--slate-600)}
+.bc-play p strong{color:var(--slate-900);font-weight:600}
 
 /* buying group + reporting fan-out */
 .buygroup{margin-top:15px;margin-bottom:10px;padding:11px 13px;background:var(--slate-50);border:1px solid var(--slate-200);border-radius:8px}
@@ -583,6 +600,38 @@ section{margin-top:52px}
           <div class="col"><div class="col-l">What to test</div><p>{{The discovery question as
             curiosity, not a second pitch. <strong>Bold</strong> the key qualifier.}}</p></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ================================================== BATTLECARDS (conditional)
+         Keep this block ONLY when both hold: (1) a technology confirmed in use at this
+         account (job_post_used_count > 0, domain checked) is a modern or legacy competitor
+         in the seller's profile (GetMyCompanyProfile / GetCompanyProfile `technologies`,
+         tech_category modern_competitors | legacy_competitors), and (2) that entry carries
+         a non-empty `battlecard`, or a battlecard uploaded at Step 1c names it. Otherwise
+         delete from this comment through the closing </div> of .bcards. Never render an
+         empty or "no battlecards" version, and never write a battlecard yourself: the
+         argument is the seller's own, carried verbatim. -->
+    <h3 class="sub-h">Battlecards</h3>
+    <p class="sub-sub">Competitors confirmed in this account's stack that your team has a
+       battlecard for. The argument is your team's, quoted as written; the footprint is
+       Sumble's, for your eyes. It shapes the call line and the door it belongs to. It is
+       never read to the prospect.</p>
+    <div class="bcards">
+      <!-- Duplicate .bcard per matched competitor, biggest confirmed footprint first. -->
+      <div class="bcard">
+        <div class="bc-head">
+          <span class="bc-tech">{{Competitor name}}</span>
+          <span class="bc-cat">{{Legacy competitor}}</span>
+          <span class="bc-foot">{{236}} confirmed · <a class="lnk" href="{{SUMBLE_TECH_URL}}">Sumble</a></span>
+        </div>
+        <div class="bc-arg"><div class="bc-l">Your battlecard</div><p>{{The seller's argument
+          against this competitor, verbatim from the profile's `battlecard` or from the upload.
+          Do not paraphrase, do not extend.}}<span class="bc-src">{{Source: company profile ·
+          or the uploaded file's name}}</span></p></div>
+        <div class="bc-play"><div class="bc-l">Where it lands</div><p>{{Which play card and
+          which door this feeds, and the one line it changes: "shapes the call line in play
+          <strong>02</strong>; lead with it at the Finance systems door".}}</p></div>
       </div>
     </div>
 

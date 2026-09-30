@@ -170,6 +170,15 @@ table.board{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
 .dc-t{font-size:13px;color:var(--slate-800)}
 .dc-t .prio{margin-right:8px}
 .evid{background:#fff;border:1px solid var(--slate-200);border-left:3px solid var(--slate-300);border-radius:8px;padding:11px 14px}
+/* battlecards inside a card: the seller's own argument against a competitor confirmed in the stack */
+.bcards{display:flex;flex-direction:column;gap:8px}
+.bcard{background:#fff;border:1px solid var(--slate-200);border-left:3px solid var(--amber-700);border-radius:8px;padding:11px 14px}
+.bc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.bc-tech{font-family:var(--font-display);font-size:13px;font-weight:600}
+.bc-cat{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber-700);background:var(--amber-50);border:1px solid var(--amber-200);border-radius:99px;padding:1px 7px}
+.bc-foot{margin-left:auto;font-family:var(--font-mono);font-size:10.5px;color:var(--slate-500)}
+.bc-foot a{color:var(--green-700);text-decoration:none;border-bottom:1px solid rgba(21,128,61,.32)}
+.bc-arg{font-size:12.5px;color:var(--slate-800);font-style:italic}
 .evid-t{font-size:12.5px;color:var(--slate-700)}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .col-l{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--slate-400);margin-bottom:6px}
@@ -393,6 +402,13 @@ const ACCOUNTS = [
       people: [
         { nm: "{{Name}}", rl: "{{Title}}", li: "{{LINKEDIN_URL}}", su: "{{SUMBLE_PERSON_URL}}", entry: true }
       ],
+      // 3b. Battlecards: OPTIONAL. Omit the key unless a technology confirmed in use at this
+      //     account is a modern/legacy competitor in the seller's profile AND that entry
+      //     carries a non-empty `battlecard` (or an uploaded battlecard names it). `arg` is
+      //     the seller's text verbatim, never your paraphrase. Nothing renders when absent.
+      battlecards: [
+        { tech: "{{Competitor}}", cat: "{{Legacy competitor}}", foot: "{{236}} confirmed", su: "{{SUMBLE_TECH_URL}}", arg: "{{The seller's argument, as written.}}" }
+      ],
       // 4. Data: the counts and the dated signal, with the org and the strongest posting
       //    hyperlinked to Sumble. Counts and sources live here, for the rep's eyes.
       evid:     "{{The counts and the dated signal, with the org and the strongest posting hyperlinked to Sumble.}}"
@@ -418,7 +434,17 @@ function cardHtml(a) {
       + (links ? '<span class="plinks">' + links + "</span>" : "")
       + "</div>";
   }).join("");
-  // Status -> Priority -> Next step -> Data. Same order as the deep dive.
+  // Battlecards render only when the card carries a non-empty array (see the ACCOUNTS comment).
+  const bcs = (c.battlecards || []).map(function (b) {
+    return '<div class="bcard">'
+      + '<div class="bc-head"><span class="bc-tech">' + b.tech + "</span>"
+      + (b.cat ? '<span class="bc-cat">' + b.cat + "</span>" : "")
+      + (b.foot ? '<span class="bc-foot">' + b.foot + (b.su ? ' &middot; <a href="' + b.su + '">Sumble</a>' : "") + "</span>" : "")
+      + "</div>"
+      + '<p class="bc-arg">' + b.arg + "</p>"
+      + "</div>";
+  }).join("");
+  // Status -> Priority -> Next step -> Battlecards (optional) -> Data. Same order as the deep dive.
   return '<div class="dcard">'
     + '<div class="dc-block"><div class="dc-l">Status</div><div class="dc-t">' + (c.status || "") + "</div></div>"
     + '<div class="dc-block"><div class="dc-l">Priority</div><div class="dc-t">'
@@ -430,6 +456,7 @@ function cardHtml(a) {
     +   "</div>"
     +   (ppl ? '<div class="people">' + ppl + "</div>" : "")
     + "</div>"
+    + (bcs ? '<div class="dc-block"><div class="dc-l">Battlecards</div><div class="bcards">' + bcs + "</div></div>" : "")
     + '<div class="dc-block"><div class="dc-l">Data</div><div class="evid"><div class="evid-t">' + c.evid + "</div></div></div>"
     + "</div>";
 }

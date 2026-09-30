@@ -27,7 +27,7 @@ that produced it comes after. Keep this order.
 | 1 | Exec summary | Thesis, 3-4 numbers, then three lines a rep can act on alone: where it stands, the priority, the next step | What's the Angle, plus your reading of the internal context |
 | 2 | Current status | What has already happened between the seller and this account, and what the account runs today | CRM, call notes, product analytics, past comms; `GetOrganizationTechStack`'s `job_post_used_count` for the stack |
 | 3 | Priority | High, Medium or Low, and the fit and trigger reasons that set it | Sumble score, signals, the profile, the internal context |
-| 4 | Next step | Why now, the ways in, who to contact first, the plays, the copy-ready messages | Recent Changes, Which Teams Are The Best Fit, Who To Contact First, the seller's own plays |
+| 4 | Next step | Why now, the ways in, who to contact first, the plays, the battlecards (only when a competitor with one is confirmed in the stack), the copy-ready messages | Recent Changes, Which Teams Are The Best Fit, Who To Contact First, the seller's own plays and battlecards |
 | 5 | Raw data | The signal footprint as bars, and every number as a receipt with its link | The Intel |
 | 6 | Limits & method | The query, which context categories came back empty, what this brief cannot see | none |
 
@@ -328,6 +328,38 @@ One quoted sentence per play, in the seller's voice, and it **names the product*
 **What to test** goes back to listening: the rep's curiosity, not a second pitch. The call
 already named the product. Bold the one key qualifier and write natural sentences, not
 `**Label:** sentence` bullets.
+
+### Battlecards
+
+A conditional block between the plays and the messaging. It exists when **both** hold:
+
+1. A technology confirmed in use at this account (`job_post_used_count > 0` in
+   `GetOrganizationTechStack`, domain checked per section 2) is a competitor in the
+   seller's profile: a `technologies` entry from `GetMyCompanyProfile` or
+   `GetCompanyProfile` with `tech_category` of `modern_competitors` or
+   `legacy_competitors`.
+2. That entry carries a non-empty `battlecard`, or the seller uploaded a battlecard at
+   Step 1c that names the competitor.
+
+When either fails, delete the whole block, heading included. A "no battlecards" line is
+padding, and a competitor with no card is already accented in the stack bars and named in
+the play's evidence, which is all the page can honestly say about it.
+
+One `.bcard` per matched competitor, biggest confirmed footprint first:
+
+- **The argument is the seller's, verbatim.** `battlecard` is hand-curated by their team
+  and the profile marks it authoritative. Quote it as written; do not paraphrase, extend,
+  soften or add a comparison of your own. If you know something the card does not say,
+  it goes in the play's evidence box, not here. An upload beats the profile where the two
+  disagree, and the card says which it used.
+- **The footprint is Sumble's, for the rep's eyes.** The confirmed count and the Sumble
+  link, with the competitor's category chip (legacy or modern). Same number as its bar in
+  section 2.
+- **Say where it lands.** Which play card and which door the argument feeds, and the one
+  line it changes. The battlecard shapes the call line and the message; it is never read
+  to the prospect. The call-line rules still apply to every word the rep says: the
+  displacement angle is asserted as a belief about their priorities, and the competitor is
+  named only when the battlecard names it.
 
 ### Messaging
 

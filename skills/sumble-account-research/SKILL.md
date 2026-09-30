@@ -117,7 +117,7 @@ Name what each thing changes, so the ask sounds worth doing rather than like hom
 | Persona or ICP one-pager | Who lands in the buying group, and the why-this-person line |
 | Discovery questions | The "what to test" column, in their own words |
 | Emails that worked | The voice and structure of every drafted message |
-| Competitive battlecards | The displacement angle and which incumbents to name |
+| Competitive battlecards | The displacement angle, which incumbents to name, and the Battlecards block when one of them is confirmed in the account's stack |
 | Reference customers with outcomes | The proof line under a call, which is otherwise left out |
 
 When they do upload something, **prefer it over the profile** where the two disagree, say in
@@ -153,6 +153,12 @@ Mix that with Sumble data:
   Both of these, and `account_status`, are scoped to the workspace owner. Skip them when the
   seller isn't that owner (Step 1c) and read fit off the seller's own profile instead.
 - Org metrics from `FindMatchAndEnrichOrganizations`: size, growth, tech stack, complements and competitors in the account
+- Battlecards. Cross the account's **confirmed** stack (`job_post_used_count > 0`, domain
+  checked) against the profile's `technologies` entries whose `tech_category` is
+  `modern_competitors` or `legacy_competitors` **and** whose `battlecard` is non-empty, or
+  that a battlecard uploaded at Step 1c names. Every match gets a card in the deliverable's
+  Battlecards block, carrying the seller's argument verbatim. No match, or a match with no
+  battlecard text, means no block: never write one yourself and never render an empty one.
 - Key people via `FindMatchAndEnrichPeople`: key functions and senior levels (VP/Director/Head) for the ICP-fit job functions. Where internal context names people (past champions from closed-lost opportunities), reverse-enrich them and check whether they're still there and how their role has changed.
 - Key teams and the people on them
 - Signals via `GetOrganizationSignals` for recent triggers, each with `priority` and `sales_angle`, plus on-thesis hiring via `FindMatchAndEnrichJobs`. Pull the **full job description and `related_people`** only for the strongest signals. The signal feed is filtered by the workspace's configs and every `sales_angle` is written for the workspace owner, so keep only the signals that stand on their own facts, never carry `sales_angle` text into the brief, and don't pad "Why now" to fill the section (`references/mcp-tools.md`).
@@ -217,7 +223,8 @@ Both are Sumble-branded internal research artifacts and share one visual system,
 Both follow the same order, decision first and analysis after: **exec summary** (where it
 stands, the priority, the next step), **current status** (what has already happened with this
 account, skipped when there is none, plus their stack), **priority** (High, Medium or Low, and
-why), **next step** (why now, the ways in, who to contact first, the plays, the messages),
+why), **next step** (why now, the ways in, who to contact first, the plays, the battlecards when
+a competitor with one is confirmed in the stack, the messages),
 **raw data** (the numbers that powered it), then **limits & method**. In the prioritization
 brief the board is the priority section and each account card runs that order in a few lines.
 

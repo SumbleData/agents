@@ -152,11 +152,23 @@ card: {
   people: [
     { nm: "Name", rl: "Title", li: "LINKEDIN_URL", su: "SUMBLE_PERSON_URL", entry: true }
   ],
+  // 3b. Battlecards. Optional; omit the key unless a competitor confirmed in the stack
+  //     has a non-empty `battlecard` in the seller's profile (or an uploaded one names
+  //     it). `arg` is the seller's text verbatim.
+  battlecards: [
+    { tech: "Competitor", cat: "Legacy competitor", foot: "236 confirmed", su: "SUMBLE_TECH_URL", arg: "The seller's argument, as written." }
+  ],
   // 4. Data. The counts and the dated signal, with the org and the strongest posting
   //    hyperlinked to Sumble. Counts and sources live here and nowhere the rep speaks.
   evid:     "..."
 }
 ```
+
+`battlecards` follows the deep dive's rule (`references/deep-dive-brief.md`, Battlecards):
+present only when a confirmed technology at the account is a `modern_competitors` or
+`legacy_competitors` entry in the profile **and** that entry's `battlecard` is non-empty.
+Leave the key off otherwise; the template renders nothing for a missing or empty array.
+The argument is quoted as the seller wrote it and shapes the angle; it is not the angle.
 
 The same call-line rules apply as in `references/deep-dive-brief.md`. Two of them matter
 most here because the card is short and every word is on show: **the angle asserts what you

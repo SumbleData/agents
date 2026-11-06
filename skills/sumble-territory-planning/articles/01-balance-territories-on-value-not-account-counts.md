@@ -8,11 +8,9 @@ Companion to [`sumble-account-scoring`](../../sumble-account-scoring/articles/01
 
 ## TLDR
 - An even account count is not a fair book: a rep with an exactly average-sized book can still hold most of the segment's best accounts.
-- Balance on **value**, read as two numbers: **KS**, how far a rep's mix of accounts sits from their peers' (stronger or weaker), and **Activation**, how much of the best business they hold they're actually working.
-- The expensive combination is a strong book (positive KS) with low Activation: good accounts parked with a rep who isn't touching them. Count-based planning can't see it. This app makes it the headline.
-- Rank accounts **within their segment**, never globally — a Commercial rank of 2 and an Enterprise rank of 2 come from different universes, and averaging across them produces numbers that mean nothing.
-- "Value" has to be real: book strength comes from an ICP-tuned account score, not headcount or gut.
-- Nothing touches your CRM. The balancer *proposes*; you accept or reject each move and export an `actions.csv`.
+- **Rank accounts within each segment.** Account scoring can now be precise enough that #8 is meaningfully better than #15, and #15 is meaningfully better than #40. You lose that detail when you bucket accounts into coarse tiers like Tier A, Tier B, and Tier C.
+- **Measure each rep's top-account share.** Within a segment, look at each rep's share of the top 20, top 50, and top 100 accounts. Aim for similar shares at each cutoff. We saw a segment with 600 ranked accounts where one rep got the top 20 and another got the bottom 20. Same number of accounts, very different shot at quota. If you want one metric across all ranks, the Kolmogorov-Smirnov distance measures the largest gap between a rep's cumulative rank distribution and the segment's overall distribution.
+- **Rebalance untouched accounts first.** You can make books fairer without disrupting active work. It also gives reps a reason to work their accounts and make sure that activity is captured in the CRM.
 
 Every sales org redraws territories the same way: count the accounts, divide by the reps, nudge until the piles look even. Maybe you weight by pipeline or named-account tier. The spreadsheet says twenty reps, ~75 accounts each — fair. Then a rep opens their book and finds 75 names they'd never call.
 

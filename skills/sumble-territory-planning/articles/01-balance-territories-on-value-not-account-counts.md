@@ -22,7 +22,7 @@ Concentration is invisible to a headcount split precisely because it's about *wh
 
 ## Two questions, kept apart: Kolmogorov-Smirnov distance and Activation
 
-"Is this book fair?" is really two questions, and jamming them into one number is why territory dashboards get ignored. The skill keeps them apart, as two columns side by side in one table a RevOps lead can read without a decoder ring.
+"Is this book fair?" is really two questions, and jamming them into one number is why territory dashboards get ignored. The skill keeps them apart, as separate columns a RevOps lead can read without a decoder ring.
 
 **Kolmogorov-Smirnov distance: is this rep's book as strong as their peers'?** Line up a rep's accounts by ICP score, and do the same for every other rep in the segment pooled together. Walk up the score scale and, at each point, compare the share of each side that falls below it. The widest of those gaps is the distance. 0 means even; +0.3 means clearly stronger; −0.3, clearly weaker. Under 0.1 is even. Above 0.25 is a real difference. It comes with a p-value, so a gap that could be luck is greyed out instead of flagged.
 

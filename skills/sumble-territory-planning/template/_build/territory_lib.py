@@ -549,20 +549,56 @@ def ks_signed(book: list[float], peers: list[float]) -> tuple[float, float]:
     return round(best, 4), ks_pvalue(best_abs, n, m)
 
 
+# How many of each rep's best accounts the Kolmogorov-Smirnov distance compares,
+# by segment key. Roughly the book a rep in that segment can work. Segments not
+# listed fall back to their default_capacity, then to KS_TOP_N_FALLBACK. Mirrored
+# by KS_TOP_N_DEFAULTS in static/app.js; tunable live in the app's sidebar.
+KS_TOP_N_DEFAULTS = {"enterprise": 50, "commercial": 150}
+KS_TOP_N_FALLBACK = 50
+
+
+def ks_top_n_for(segment: dict[str, Any]) -> int:
+    """The default top N for one plan segment: its own `ks_top_n`, else the
+    per-key default, else its default_capacity, else KS_TOP_N_FALLBACK."""
+    own = to_int(segment.get("ks_top_n"))
+    if own > 0:
+        return own
+    key = str(segment.get("key") or "")
+    if key in KS_TOP_N_DEFAULTS:
+        return KS_TOP_N_DEFAULTS[key]
+    return to_int(segment.get("default_capacity")) or KS_TOP_N_FALLBACK
+
+
+def top_n_scores(book: list[float], n: int) -> list[float]:
+    """A rep's best `n` scores, strongest first. A book with fewer than `n`
+    accounts is padded with empty slots scoring 0, so a thin book reads weaker
+    than a full one of the same mix: fewer accounts means fewer chances."""
+    best = sorted(book, reverse=True)[:n]
+    return best + [0.0] * (n - len(best))
+
+
 def ks_by_segment(
     rows: list[dict[str, Any]],
     reps: list[dict[str, Any]],
     owner_field: str = "owner",
+    top_n: dict[str, int] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
-    """segment -> rep -> {ks, p, n, n_peers} for every rep with an in-segment
-    book. Mirrors ksForRep() in static/app.js.
+    """segment -> rep -> {ks, p, n, top_n, n_peers} for every rep with an
+    in-segment book. Mirrors ksForRep() in static/app.js. With no `top_n`
+    the distance compares whole books; the Overview shows both readings.
 
     A rep's book is the accounts they own whose size puts them in the rep's
     own segment (whitespace excluded) — the same in-segment book the Overview
-    ranks. Peers are the other reps in that segment who count toward balance;
-    a player-coach (in_balance=0) still gets a reading but never sets the norm
+    ranks. With `top_n`, the distance compares the rep's best `top_n[segment]` accounts with
+    each peer's best `top_n[segment]`, pooled; short books are padded with empty
+    slots scoring 0 (see top_n_scores). So book size counts, accounts past N
+    don't, and every rep in a segment is read on the same number of slots.
+    Peers are the other reps in that segment who count toward balance; a
+    player-coach (in_balance=0) still gets a reading but never sets the norm
     for anyone else.
     """
+    whole_book = top_n is None
+    top_n = top_n or {}
     seg_of = {str(r.get("name") or ""): str(r.get("segment") or "") for r in reps
               if truthy(r.get("is_rep", "1"))}
     in_bal = {str(r.get("name") or ""): rep_in_balance(r) for r in reps}
@@ -576,16 +612,26 @@ def ks_by_segment(
             continue
         books.setdefault(owner, []).append(to_float(row.get("score")))
 
+    def n_for(seg: str) -> int:
+        return top_n.get(seg) or ks_top_n_for({"key": seg})
+
     out: dict[str, dict[str, dict[str, Any]]] = {}
     for rep, book in sorted(books.items()):
         seg = seg_of[rep]
+        n = None if whole_book else n_for(seg)
+
+        def pick(scores: list[float], n: int | None = n) -> list[float]:
+            return scores if n is None else top_n_scores(scores, n)
+
         peers = [
             s for other, ob in books.items()
             if other != rep and seg_of.get(other) == seg and in_bal.get(other, True)
-            for s in ob
+            for s in pick(ob)
         ]
-        d, p = ks_signed(book, peers)
-        out.setdefault(seg, {})[rep] = {"ks": d, "p": p, "n": len(book), "n_peers": len(peers)}
+        d, p = ks_signed(pick(book), peers)
+        out.setdefault(seg, {})[rep] = {
+            "ks": d, "p": p, "n": len(book), "top_n": n, "n_peers": len(peers),
+        }
     return out
 
 

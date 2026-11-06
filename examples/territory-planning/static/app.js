@@ -33,8 +33,10 @@ const state = {
   scoreRank: {},        // org_id -> global rank by ICP score (1 = best)
   overviewSegment: "all", // Overview segment filter: "all" = both, else a key
   overviewSort: {         // per-matrix sort; default the summary metric, desc
-    strength: { key: "summary", dir: -1 },
+    strength: { key: "ks_top", dir: -1 },
   },
+  ksTopN: {},             // segment key -> how many of each rep's best accounts
+                          // the Kolmogorov-Smirnov distance compares (sidebar)
 };
 
 const PAGE_DESCRIPTIONS = {
@@ -376,49 +378,23 @@ function wireMovesCta(root) {
   };
 }
 
-/** The Overview is one book-strength table (KS + Activation per rep and
- *  segment, coloured by column) followed by the "needs attention" flag cards. */
+/** The Overview is one book-strength table per segment (two
+ *  Kolmogorov-Smirnov distances + Activation per rep, coloured by column)
+ *  followed by the "needs attention" flag cards. */
 function renderOverview() {
-  const { ranks, sizes } = segmentRanks();
+  const { sizes } = segmentRanks();
   const parts = [
     `<p class="eval-diag-sub" id="matrices-note">` +
-    "Two questions per rep: <strong>Kolmogorov-Smirnov distance</strong> — is their book as strong as their " +
-    "peers'? (0 = same mix of accounts, + = stronger, − = weaker; " +
-    "<strong>click a distance</strong> to see their accounts ranked.) " +
-    "<strong>Activation</strong> — what share of their accounts had a meeting, " +
-    "call or email in the activity window? Greener = stronger, down each column. <strong>Click any header to sort</strong>; " +
-    "click a rep to open their accounts. Hover any ⓘ for the detail.</p>",
+    "Per rep, against the other reps in the same segment: the <strong>Kolmogorov-Smirnov " +
+    "distance</strong> on their <strong>top N</strong> accounts (do they have as much good " +
+    "opportunity as their peers? N is set per segment in the sidebar) and on " +
+    "<strong>all accounts</strong> (is their mix as strong?). 0 = even, + = stronger, " +
+    "− = weaker; <strong>click a distance</strong> to see their accounts ranked. " +
+    "<strong>Activation</strong> is the share of their accounts with a meeting, call or " +
+    "email in the activity window. <strong>Click any header to sort</strong>; click a rep " +
+    "to open their accounts. Hover any ⓘ for the detail.</p>",
   ];
 
-  // KS: how far this rep's mix of accounts sits from their peers' pooled mix,
-  // signed so + = stronger. Cached per render; the drill-down reads it too.
-  state.ksCache = {};
-  const ksCol = {
-    label: "Kolmogorov-Smirnov distance", better: "diverging", fmt: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") +
-      Math.abs(v).toFixed(2),
-    cls: "ks-cell",
-    help: "Is this rep's book as strong as their peers' books? Measured on " +
-      "account score.\n\n" +
-      "Line up every account in the rep's book by score, do the same for every other " +
-      "rep in the segment pooled together, and find the score where the two differ " +
-      "most. That gap is the Kolmogorov-Smirnov distance: 0 means the rep got the same mix of strong and " +
-      "weak accounts as everyone else, 1 means no overlap at all. + means their book " +
-      "skews stronger, − weaker.\n\n" +
-      "It compares the MIX, not the size: a rep with 30 accounts and one with 300 can " +
-      "both read 0. Book size is the In-seg column. Rough guide: under 0.1 is even, " +
-      "0.1–0.25 is worth a look, above 0.25 is a real difference. A greyed value could " +
-      "be chance (small book, p ≥ 0.05).\n\nClick a value to see the rep's accounts ranked.",
-    value: (book, grp) => {
-      const k = ksForRep(book, grp);
-      state.ksCache[`${grp.key}|${k.rep}`] = k;
-      return k.n_peers ? k.ks : null;
-    },
-    // value() ran first for this row and cached the reading.
-    muted: (book, grp) => {
-      const k = state.ksCache[`${grp.key}|${grp.books.find((b) => b.book === book)?.rep.name}`];
-      return !!k && k.p >= KS_SIGNIFICANCE;
-    },
-  };
   // Only segments that actually have reps; pick a valid selection ("all" shows
   // every segment, the default).
   const segs = state.segments.filter((seg) =>
@@ -427,7 +403,6 @@ function renderOverview() {
   if (selKey !== "all" && !segs.some((s) => s.key === selKey)) selKey = "all";
   state.overviewSegment = selKey;
 
-  // Segment filter: All (both) + one pill per segment.
   if (segs.length > 1) {
     const pill = (key, label, sub) =>
       `<button class="seg-pill ${key === selKey ? "active" : ""}" data-seg="${esc(key)}">` +
@@ -439,48 +414,74 @@ function renderOverview() {
       `</div>`);
   }
 
-  // Build one row-group per shown segment — "All" includes every segment, a
-  // filter narrows to one. Either way there is ONE table below.
-  const shown = selKey === "all" ? segs : segs.filter((s) => s.key === selKey);
-  const groups = shown.map((seg) => ({
-    key: seg.key,
-    label: seg.label,
-    order: seg.order ?? 0,
-    size: sizes[seg.key] || 0,
-    books: state.reps.filter((r) => r.segment === seg.key).map((rep) => ({
-      rep,
-      book: inSegmentBook(rep.name, seg.key),
-    })),
-  }));
+  const windowDays = fmt(state.plan.activity?.window_days || 90);
+  // Activation is ENTIRELY activity-derived. With no events loaded it would
+  // read 0% for every rep, indistinguishable from a team working nothing, so
+  // the column is dropped and a note says why.
+  const hasAct = hasActivityData();
+  const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
+  const ksMetric = (mode, n) => ({
+    key: mode === "top" ? "ks_top" : "ks_all",
+    label: mode === "top" ? `Kolmogorov-Smirnov distance, top ${fmt(n)}`
+      : "Kolmogorov-Smirnov distance, all accounts",
+    better: "diverging", fmt: signed, cls: "ks-cell", ksMode: mode,
+    help: mode === "top"
+      ? `Does this rep have as much good opportunity as their peers? Compares the rep's ` +
+        `best ${fmt(n)} accounts by score with each peer's best ${fmt(n)}, pooled, and ` +
+        `finds the score where the two differ most. That gap is the Kolmogorov-Smirnov ` +
+        `distance: 0 = even, + = stronger, − = weaker, ±1 = no overlap.\n\n` +
+        `A rep with fewer than ${fmt(n)} accounts has empty slots that count as score 0, ` +
+        `so a thin book reads weaker: fewer accounts, fewer chances. Accounts past their ` +
+        `top ${fmt(n)} don't count, so piling on weak accounts doesn't help. Change N in ` +
+        `the sidebar.\n\nRough guide: under 0.1 is even, 0.1–0.25 is worth a look, above ` +
+        `0.25 is a real difference. A greyed value could be chance (p ≥ ${KS_SIGNIFICANCE}). ` +
+        `Click a value to see the rep's accounts ranked.`
+      : `Is this rep's mix of accounts as strong as their peers'? Compares the scores of ` +
+        `every account in the rep's book with every peer account, pooled, and finds the ` +
+        `score where the two differ most.\n\nIt ignores book size: a rep with 30 accounts ` +
+        `and one with 300 can both read 0 if the mix is the same. Read it next to the top-N ` +
+        `column, which does count book size. Small books read bigger by chance; a greyed ` +
+        `value could be chance (p ≥ ${KS_SIGNIFICANCE}). Click a value to see the rep's ` +
+        `accounts ranked.`,
+    value: (book, grp) => {
+      const k = ksForRep(book, grp, mode === "top" ? n : null);
+      return k.n_peers ? { v: k.ks, muted: k.p >= KS_SIGNIFICANCE } : null;
+    },
+  });
+  const activationMetric = {
+    key: "activation", label: "Activation", better: "high", fmt: (v) => `${fmt(v, 0)}%`,
+    help: `What share of this rep's accounts in this segment had a meeting, call, or ` +
+      `outbound email in the last ${windowDays} days?\n\nA plain count: every account ` +
+      `counts the same. Nobody works a whole book, so 100% is rare. A strong book ` +
+      `(positive distance) with low Activation is the expensive combination: good ` +
+      `accounts parked with someone who isn't working them.`,
+    value: (book) => (book.length ? { v: workedPctOf(book) } : null),
+  };
 
-  if (groups.length) {
-    const ctx = groups.length === 1
-      ? `${esc(groups[0].label)} · ranked within ${fmt(groups[0].size)} accounts`
-      : groups.map((g) => `${esc(g.label)} within ${fmt(g.size)}`).join(" · ");
-    const windowDays = fmt(state.plan.activity?.window_days || 90);
+  // One table per segment: a rep is only ever compared with their own
+  // segment's peers, so the rows never share a scale across segments.
+  const shown = selKey === "all" ? segs : segs.filter((s) => s.key === selKey);
+  for (const seg of shown) {
+    const grp = {
+      key: seg.key, label: seg.label, size: sizes[seg.key] || 0,
+      books: state.reps.filter((r) => r.segment === seg.key).map((rep) => ({
+        rep, book: inSegmentBook(rep.name, seg.key),
+      })),
+    };
+    const n = state.ksTopN[seg.key] || KS_TOP_N_FALLBACK;
     parts.push(
-      `<h3 class="terr-h3">Book strength <span class="terr-sub">${ctx}</span></h3>`);
-    // Activation is ENTIRELY activity-derived. With no events loaded it would
-    // read 0% for every rep, indistinguishable from a team working nothing, so
-    // the column is dropped and a note says why.
-    const hasAct = hasActivityData();
-    parts.push(renderMatrix(
-      groups, hasAct ? workedPctOf : null, "high", (v) => `${fmt(v, 0)}%`, ksCol,
-      { matrixId: "strength", sort: state.overviewSort.strength,
-        allLabel: hasAct ? "Activation" : "",
-        allHelp: `What share of this rep's accounts in this segment had a meeting, ` +
-          `call, or outbound email in the last ${windowDays} days?\n\n` +
-          `A plain count: every account counts the same. Nobody works a whole book, ` +
-          `so 100% is rare. Read it next to the Kolmogorov-Smirnov distance: a strong ` +
-          `book (positive distance) with low Activation is the expensive combination, good accounts parked with ` +
-          `someone who isn't working them.` }));
-    if (!hasAct) {
-      parts.push(
-        `<div class="terr-note">No activity data loaded, so Activation cannot be ` +
-        `measured. The Activation column and the worked-based flags are hidden ` +
-        `rather than shown as zero. The Kolmogorov-Smirnov distance is unaffected: it comes from account score ` +
-        `and ownership only.</div>`);
-    }
+      `<h3 class="terr-h3">${esc(seg.label)} <span class="terr-sub">` +
+      `${fmt(grp.books.length)} reps · ranked within ${fmt(grp.size)} accounts</span></h3>`);
+    parts.push(renderMatrix(grp, [
+      ksMetric("top", n), ksMetric("all", n), ...(hasAct ? [activationMetric] : []),
+    ], state.overviewSort.strength));
+  }
+  if (!hasAct && shown.length) {
+    parts.push(
+      `<div class="terr-note">No activity data loaded, so Activation cannot be ` +
+      `measured. The Activation column and the worked-based flags are hidden ` +
+      `rather than shown as zero. The Kolmogorov-Smirnov distances are unaffected: ` +
+      `they come from account score and ownership only.</div>`);
   }
   $("#overview-segments").innerHTML = parts.join("");
   $$("#overview-segments .seg-pill").forEach((btn) => {
@@ -488,17 +489,17 @@ function renderOverview() {
   });
   $$("#overview-segments th.sortable").forEach((th) => {
     th.onclick = () => {
-      const m = th.dataset.matrix, k = th.dataset.key;
-      const cur = state.overviewSort[m];
-      if (cur.key === k) cur.dir = -cur.dir;   // toggle direction
-      else state.overviewSort[m] = { key: k, dir: (k === "rep" || k === "seg") ? 1 : -1 };
+      const k = th.dataset.key;
+      const cur = state.overviewSort.strength;   // shared by every segment's table
+      if (cur.key === k) cur.dir = -cur.dir;     // toggle direction
+      else state.overviewSort.strength = { key: k, dir: k === "rep" ? 1 : -1 };
       renderOverview();
     };
   });
   $$("#overview-segments td.ks-cell[data-rep]").forEach((td) => {
     td.onclick = (e) => {
       e.stopPropagation();   // the row click would jump to the Accounts tab
-      showRepRanking(td.dataset.rep, td.dataset.seg);
+      showRepRanking(td.dataset.rep, td.dataset.seg, td.dataset.mode);
     };
   });
   $$("#overview-segments tr.rep-row").forEach((tr) => {
@@ -617,17 +618,39 @@ function ksSigned(book, peers) {
   return { ks: Math.round(best * 1e4) / 1e4, p: ksPValue(bestAbs, a.length, b.length), at };
 }
 
-/** One rep's KS reading inside a segment group. Peers are the OTHER reps in the
- *  segment who count toward balance; a player-coach gets a reading but never
- *  sets the norm. Mirrors territory_lib.ks_by_segment(). */
-function ksForRep(book, grp) {
+/** Default top N per segment key; mirrors territory_lib.KS_TOP_N_DEFAULTS. */
+const KS_TOP_N_DEFAULTS = { enterprise: 50, commercial: 150 };
+const KS_TOP_N_FALLBACK = 50;
+
+/** The plan's top N for a segment: its own ks_top_n, else the per-key default,
+ *  else its default_capacity, else the fallback. Mirrors ks_top_n_for(). */
+function planTopN(seg) {
+  return num(seg.ks_top_n) || KS_TOP_N_DEFAULTS[seg.key] ||
+    num(seg.default_capacity) || KS_TOP_N_FALLBACK;
+}
+
+/** A rep's best `n` scores, strongest first, padded with empty slots scoring 0
+ *  when the book is shorter than `n`. Mirrors territory_lib.top_n_scores(). */
+function topNScores(scores, n) {
+  const best = [...scores].sort((a, b) => b - a).slice(0, n);
+  return best.concat(Array(Math.max(0, n - best.length)).fill(0));
+}
+
+/** One rep's reading inside a segment group: their best N accounts against
+ *  each peer's best N, pooled. Peers are the OTHER reps in the segment who
+ *  count toward balance; a player-coach gets a reading but never sets the
+ *  norm. Mirrors territory_lib.ks_by_segment(). */
+function ksForRep(book, grp, n) {
   const me = grp.books.find((b) => b.book === book);
   const repName = me ? me.rep.name : "";
+  // n = null compares whole books; a number compares each rep's top n.
+  const pick = (scores) => (n ? topNScores(scores, n) : scores);
   const peers = grp.books
     .filter((b) => b.rep.name !== repName && b.rep.in_balance !== false)
-    .flatMap((b) => b.book.map((r) => num(r.score)));
-  const res = ksSigned(book.map((r) => num(r.score)), peers);
-  return { ...res, rep: repName, n: book.length, n_peers: peers.length, peers };
+    .flatMap((b) => pick(b.book.map((r) => num(r.score))));
+  const mine = pick(book.map((r) => num(r.score)));
+  const res = ksSigned(mine, peers);
+  return { ...res, rep: repName, n: book.length, top_n: n || null, n_peers: peers.length, mine, peers };
 }
 
 /** Diverging shade for a signed value: green when the book is stronger than
@@ -643,7 +666,7 @@ function divergingStyleAttr(val, maxAbs) {
 
 /** The KS drill-down: the rep's in-segment accounts ranked, with a chart of
  *  their score distribution against their peers' so the gap is visible. */
-function showRepRanking(repName, segKey) {
+function showRepRanking(repName, segKey, mode = "top") {
   const { ranks, sizes } = segmentRanks();
   const book = inSegmentBook(repName, segKey);
   const grp = {
@@ -651,23 +674,32 @@ function showRepRanking(repName, segKey) {
     books: state.reps.filter((r) => r.segment === segKey)
       .map((rep) => ({ rep, book: rep.name === repName ? book : inSegmentBook(rep.name, segKey) })),
   };
-  const k = ksForRep(book, grp);
+  const topN = state.ksTopN[segKey] || KS_TOP_N_FALLBACK;
+  const kTop = ksForRep(book, grp, topN);
+  const kAll = ksForRep(book, grp, null);
+  const k = mode === "all" ? kAll : kTop;   // the column clicked drives the chart
   const segLabel = state.segLabel[segKey] || segKey;
-  const sign = k.ks > 0 ? "+" : k.ks < 0 ? "−" : "";
+  const signed = (x) => (x.ks > 0 ? "+" : x.ks < 0 ? "−" : "") + Math.abs(x.ks).toFixed(2);
+  const pv = (x) => (x.p < 0.001 ? "p < 0.001" : `p = ${x.p.toFixed(3)}`);
+  const what = mode === "all" ? "Their mix of accounts" : `Their top ${fmt(topN)}`;
   const verdict = !k.n_peers ? "No peers in this segment to compare against."
     : k.p >= KS_SIGNIFICANCE
-      ? "Not clearly different from their peers — a gap this size could be chance."
-      : k.ks > 0 ? "Their book skews stronger than their peers'."
-        : "Their book skews weaker than their peers'.";
+      ? `${what}: not clearly different from their peers' — a gap this size could be chance.`
+      : k.ks > 0 ? `${what}: stronger than their peers'.`
+        : `${what}: weaker than their peers'.`;
 
   $("#detail-name").textContent = repName;
   $("#detail-meta").innerHTML =
-    `${esc(segLabel)} · Kolmogorov-Smirnov distance <strong>${sign}${Math.abs(k.ks).toFixed(2)}</strong>` +
-    (k.n_peers ? ` · p ${k.p < 0.001 ? "< 0.001" : `= ${k.p.toFixed(3)}`}` : "") +
-    ` · ${fmt(k.n)} accounts vs ${fmt(k.n_peers)} peer accounts`;
+    `${esc(segLabel)} · ${fmt(book.length)} accounts<br>Kolmogorov-Smirnov distance: ` +
+    `top ${fmt(topN)} <strong>${signed(kTop)}</strong> (${pv(kTop)}) · ` +
+    `all accounts <strong>${signed(kAll)}</strong> (${pv(kAll)})` +
+    (book.length < topN ? `<br>${fmt(topN - book.length)} empty slots in their top ${fmt(topN)} count as score 0` : "");
 
   const activity = hasActivityData();
-  const rowsHtml = book.map((r, idx) => `<tr class="ks-acct" data-id="${esc(r.org_id)}">
+  const cut = topN < book.length
+    ? `<tr class="ks-cut"><td colspan="5">Past their top ${fmt(topN)}: not in the top-${fmt(topN)} distance</td></tr>` : "";
+  const rowsHtml = book.map((r, idx) => (idx === topN ? cut : "") +
+    `<tr class="ks-acct${idx >= topN ? " ks-past" : ""}" data-id="${esc(r.org_id)}">
       <td class="num">${idx + 1}</td>
       <td>${esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
       <td class="num">${ranks[r.org_id] ? fmt(ranks[r.org_id]) : "—"}</td>
@@ -678,7 +710,7 @@ function showRepRanking(repName, segKey) {
   $("#detail-body").innerHTML = `
     <div class="detail-section">
       <p>${esc(verdict)}</p>
-      ${k.n_peers ? ksChartHtml(book.map((r) => num(r.score)), k) : ""}
+      ${k.n_peers ? ksChartHtml(k.mine, k) : ""}
     </div>
     <div class="detail-section">
       <h3>Their ${esc(segLabel)} accounts, strongest first</h3>
@@ -699,7 +731,7 @@ function showRepRanking(repName, segKey) {
     $("#detail-panel").classList.add("hidden");
     switchTab("accounts");
   };
-  wireKsChart(book.map((r) => num(r.score)), k);
+  wireKsChart(k.mine, k);
   $("#detail-panel").classList.remove("hidden");
 }
 
@@ -712,21 +744,30 @@ function shareAtLeast(sortedVals, x) {
 
 const KS_CHART = { w: 360, h: 210, l: 38, r: 10, t: 12, b: 34 };
 
+/** The chart's x range: the real scores only, so empty slots (score 0) don't
+ *  squash the axis. */
+function ksChartRange(bookScores, peers) {
+  const real = [...bookScores, ...peers].filter((v) => v > 0);
+  if (!real.length) return [0, 1];
+  return [Math.min(...real), Math.max(...real)];
+}
+
 /** Two step lines: for each score on the x axis, the share of the book (and of
  *  the peers' pooled book) scoring at least that much. The widest vertical gap
  *  is the KS distance, marked with a dashed rule. */
 function ksChartHtml(bookScores, k) {
   const { w, h, l, r, t, b } = KS_CHART;
-  const all = [...bookScores, ...k.peers];
-  const lo = Math.min(...all), hi = Math.max(...all);
+  const [lo, hi] = ksChartRange(bookScores, k.peers);
   const span = hi - lo || 1;
   const X = (v) => l + ((v - lo) / span) * (w - l - r);
   const Y = (p) => t + (1 - p) * (h - t - b);
   const steps = (vals) => {
     const s = [...vals].sort((a, c) => a - c);
     const xs = [...new Set(s)];
-    let d = `M${X(lo).toFixed(1)},${Y(1).toFixed(1)}`;
+    // Starts below 100% when empty slots (score 0) sit left of the axis.
+    let d = `M${X(lo).toFixed(1)},${Y(shareAtLeast(s, lo)).toFixed(1)}`;
     for (const x of xs) {
+      if (x < lo) continue;
       const after = shareAtLeast(s, x + 1e-9);   // share strictly above x
       d += ` H${X(x).toFixed(1)} V${Y(after).toFixed(1)}`;
     }
@@ -763,9 +804,12 @@ function ksChartHtml(bookScores, k) {
       </svg>
       <div id="ks-tip" class="ks-tip hidden"></div>
     </div>
-    <p class="eval-diag-sub">Each line is the share of a book scoring at least the
-      score on the x axis. The dashed rule marks the widest gap between the two lines:
-      that gap is the Kolmogorov-Smirnov distance.</p>`;
+    <p class="eval-diag-sub">${k.top_n
+      ? `Each line is the share of a rep's top ${fmt(k.top_n)} accounts scoring at least
+        the score on the x axis. Empty slots score 0, so a thin book's line starts below 100%.`
+      : `Each line is the share of a book scoring at least the score on the x axis.`}
+      The dashed rule marks the widest gap between the two lines: that gap is the
+      Kolmogorov-Smirnov distance.</p>`;
 }
 
 /** Crosshair + tooltip on the KS chart: at the hovered score, the share of this
@@ -774,8 +818,8 @@ function wireKsChart(bookScores, k) {
   const svg = $("#ks-chart"), hit = $("#ks-hit"), tip = $("#ks-tip"), cross = $("#ks-cross");
   if (!svg || !hit) return;
   const { w, l, r } = KS_CHART;
-  const all = [...bookScores, ...k.peers];
-  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
+  const [lo, hi] = ksChartRange(bookScores, k.peers);
+  const span = hi - lo || 1;
   const bs = [...bookScores].sort((a, c) => a - c);
   const ps = [...k.peers].sort((a, c) => a - c);
   hit.onmousemove = (e) => {
@@ -800,74 +844,43 @@ function workedPctOf(slice) {
   return (100 * slice.filter((r) => num(r.worked)).length) / slice.length;
 }
 
-/** The Overview matrix over one or more segment `groups`, as a single table. When more than
- *  one segment is shown, a **Segment column** labels each row. `valueOf(slice)` →
- *  the number the extra column shows (or null); `better` is which direction
- *  is good; `fmtVal` formats it. Colours are assigned per COLUMN **within each segment**,
- *  so ranks drawn from different segment universes are never shaded against each
- *  other, even though the rows share one table.
- *
- *  `opts.allLabel` adds a column after the summary under that heading (the
- *  Overview's Activation); omit it and the table is just the summary metric. */
-function renderMatrix(groups, valueOf, better, fmtVal, summary, opts) {
-  const showSeg = groups.length > 1;
-  const sort = opts.sort;
-  const allLabel = opts.allLabel || "";
+/** One segment's Overview table. `metrics` are the heat columns after Rep and
+ *  In-seg: each has `value(book, grp)` → `{v, muted?}` or null, a `fmt`, the
+ *  direction that is good (`better`: "high" or "diverging"), and an optional
+ *  `ksMode` that makes the cell open the rep's ranking. Colours run per column
+ *  within this segment only. `sort` is `{key, dir}`, shared across segments. */
+function renderMatrix(grp, metrics, sort) {
+  const rows = grp.books.map(({ rep, book }) => {
+    const vals = {};
+    for (const m of metrics) vals[m.key] = m.value(book, grp);
+    return { rep, book, vals };
+  });
 
-  // Flatten all segments into one sortable list; the Segment column keeps each
-  // row's universe legible once sorting interleaves them.
-  const flat = [];
-  for (const grp of groups) {
-    for (const { rep, book } of grp.books) {
-      const vals = {};
-      vals.all = book.length && valueOf ? valueOf(book) : null;
-      vals.summary = summary ? summary.value(book, grp) : null;
-      const muted = !!(summary && summary.muted && vals.summary != null &&
-        summary.muted(book, grp));
-      flat.push({ rep, book, grp, vals, muted });
-    }
-  }
-
-  // Column spec: text columns (Rep, Segment, In-seg) plus heat columns (summary,
-  // optionally whole-book). `heat` is the vals key + colour
-  // source; `dir` its good end.
   const columns = [
     { label: "Rep", key: "rep", text: true },
-    ...(showSeg ? [{ label: "Segment", key: "seg", text: true }] : []),
     { label: "In-seg", key: "inseg" },
-    ...(summary ? [{ label: summary.label, key: "summary", heat: "summary",
-      dir: summary.better, fmtc: summary.fmt, help: summary.help,
-      cls: `summary-cell ${summary.cls || ""}`.trim() }] : []),
-    ...(allLabel ? [{ label: allLabel, key: "all", heat: "all", dir: better, fmtc: fmtVal,
-      help: opts.allHelp }] : []),
+    ...metrics,
   ];
-
-  // A sort key can outlive its column (saved state, or a column that only exists
-  // on the other matrix) — fall back to the default rather than sorting on a
-  // key nothing renders.
+  // A sort key can outlive its column (e.g. Activation with no activity
+  // loaded); fall back to the first metric rather than sorting on nothing.
   if (!columns.some((c) => c.key === sort.key)) {
-    sort.key = summary ? "summary" : "rep";
+    sort.key = metrics[0]?.key || "rep";
     sort.dir = -1;
   }
 
-  // Conditional formatting is over the WHOLE column (all rows, both segments),
-  // not per segment.
   const bounds = {};
-  for (const c of columns) {
-    if (!c.heat && c.heat !== 0) continue;
-    const vs = flat.map((r) => r.vals[c.heat]).filter((v) => v != null);
-    bounds[c.heat] = vs.length ? { min: Math.min(...vs), max: Math.max(...vs) } : null;
+  for (const m of metrics) {
+    const vs = rows.map((r) => r.vals[m.key]?.v).filter((v) => v != null);
+    bounds[m.key] = vs.length ? { min: Math.min(...vs), max: Math.max(...vs) } : null;
   }
 
   // Sort (nulls always last).
   const sortVal = (row, key) => {
     if (key === "rep") return row.rep.name.toLowerCase();
-    if (key === "seg") return row.grp.order;
     if (key === "inseg") return row.book.length;
-    if (key === "summary") return row.vals.summary;
-    return row.vals.all;
+    return row.vals[key]?.v ?? null;
   };
-  flat.sort((a, b) => {
+  rows.sort((a, b) => {
     const av = sortVal(a, sort.key), bv = sortVal(b, sort.key);
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
@@ -884,28 +897,26 @@ function renderMatrix(groups, valueOf, better, fmtVal, summary, opts) {
     // discoverable, and it won't clash with the sort click.
     const info = c.help ? ` <span class="col-info" title="${esc(c.help)}">ⓘ</span>` : "";
     return `<th class="sortable ${c.text ? "" : "num"}${active ? " sorted" : ""}" ` +
-      `data-matrix="${esc(opts.matrixId)}" data-key="${esc(c.key)}">` +
-      `${esc(c.label)}${arrow}${info}</th>`;
+      `data-key="${esc(c.key)}">${esc(c.label)}${arrow}${info}</th>`;
   }).join("")}</tr>`;
 
-  const body = flat.map(({ rep, book, grp, vals, muted }) => {
+  const body = rows.map(({ rep, book, vals }) => {
     const cells = columns.map((c) => {
       if (c.key === "rep") return `<td>${esc(rep.name)}</td>`;
-      if (c.key === "seg") return `<td class="seg-cell">${esc(grp.label)}</td>`;
       if (c.key === "inseg") return `<td class="num">${fmt(book.length)}</td>`;
-      const v = vals[c.heat];
-      if (v == null) return `<td class="num matrix-empty ${c.cls || ""}">—</td>`;
-      const b = bounds[c.heat];
-      const isSummary = c.key === "summary";
+      const cell = vals[c.key];
+      if (!cell || cell.v == null) return `<td class="num matrix-empty ${c.cls || ""}">—</td>`;
+      const v = cell.v, b = bounds[c.key];
       // A diverging column is shaded by distance from 0 in either direction;
       // a reading that could be chance is left unshaded and greyed.
-      const bg = isSummary && muted ? "" : c.dir === "diverging"
+      const bg = cell.muted ? "" : c.better === "diverging"
         ? divergingStyleAttr(v, Math.max(Math.abs(b.min), Math.abs(b.max)))
-        : heatStyleAttr(v, b.min, b.max, c.dir);
-      const extra = isSummary && muted ? " ks-muted" : "";
-      const data = isSummary ? ` data-rep="${esc(rep.name)}" data-seg="${esc(grp.key)}"` : "";
-      const tip = isSummary && muted ? ` title="Could be chance: p ≥ ${KS_SIGNIFICANCE}"` : "";
-      return `<td class="num ${c.cls || ""}${extra}"${bg}${data}${tip}>${c.fmtc(v)}</td>`;
+        : heatStyleAttr(v, b.min, b.max, c.better);
+      const extra = cell.muted ? " ks-muted" : "";
+      const data = c.ksMode
+        ? ` data-rep="${esc(rep.name)}" data-seg="${esc(grp.key)}" data-mode="${c.ksMode}"` : "";
+      const tip = cell.muted ? ` title="Could be chance: p ≥ ${KS_SIGNIFICANCE}"` : "";
+      return `<td class="num ${c.cls || ""}${extra}"${bg}${data}${tip}>${c.fmt(v)}</td>`;
     }).join("");
     return `<tr class="rep-row" data-rep="${esc(rep.name)}">${cells}</tr>`;
   }).join("");
@@ -1247,6 +1258,23 @@ function render() {
   else if (state.tab === "export") renderExport();
 }
 
+/** Put the top-N inputs back to the plan's values and rebuild them. */
+function resetKsTopN() {
+  state.ksTopN = Object.fromEntries(state.segments.map((s) => [s.key, planTopN(s)]));
+  const segs = state.segments.filter((s) => state.reps.some((r) => r.segment === s.key));
+  $("#ks-topn-fields").innerHTML = segs.map((s) => `<label class="cal-field">
+      <span>${esc(s.label)}</span>
+      <input type="number" min="1" step="1" class="terr-input" data-seg="${esc(s.key)}"
+             value="${state.ksTopN[s.key]}" />
+    </label>`).join("");
+  $$("#ks-topn-fields input").forEach((el) => {
+    el.oninput = () => {
+      const n = Math.floor(num(el.value));
+      if (n >= 1) { state.ksTopN[el.dataset.seg] = n; render(); }
+    };
+  });
+}
+
 async function init() {
   const res = await fetch("/api/plan");
   const data = await res.json();
@@ -1257,6 +1285,7 @@ async function init() {
   state.reps = (data.plan.reps || []).filter((r) => r.is_rep);
   state.repByName = Object.fromEntries(state.reps.map((r) => [r.name, r]));
   state.strongCutoff = num(data.plan.strong_cutoff) || 500;
+  resetKsTopN();
 
   const company = (data.plan.company || {}).name || "Territory";
   $("#customer-name").textContent = `${company} territory plan`;
@@ -1275,6 +1304,7 @@ async function init() {
     // inputs (rebuilt from the plan) and the strong-account cutoff.
     state.strongCutoff = num(state.plan.strong_cutoff) || 500;
     $("#strong-cutoff").value = state.strongCutoff;
+    resetKsTopN();
     $("#calibrate-controls").dataset.built = "";
     $("#calibrate-status").textContent = "";
     render();

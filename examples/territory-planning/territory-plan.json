@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-06T12:47:32-08:00",
+  "generated_at": "2026-11-06T13:12:43-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -16,13 +16,15 @@
       "key": "commercial",
       "label": "Commercial",
       "order": 1,
-      "default_capacity": 150
+      "default_capacity": 150,
+      "ks_top_n": 150
     },
     {
       "key": "enterprise",
       "label": "Enterprise",
       "order": 2,
-      "default_capacity": 50
+      "default_capacity": 50,
+      "ks_top_n": 50
     }
   ],
   "boundary": {

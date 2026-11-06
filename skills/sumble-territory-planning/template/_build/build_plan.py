@@ -111,6 +111,9 @@ def main() -> None:
                     if str(s.get("default_capacity") or "").strip()
                     else None
                 ),
+                # How many of each rep's best accounts the Kolmogorov-Smirnov
+                # distance compares. Tunable live in the app's sidebar.
+                "ks_top_n": tl.ks_top_n_for(s),
             }
             for i, s in enumerate(segments)
         ],

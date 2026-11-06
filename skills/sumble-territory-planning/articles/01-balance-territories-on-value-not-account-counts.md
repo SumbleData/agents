@@ -24,9 +24,14 @@ Concentration is invisible to a headcount split precisely because it's about *wh
 
 "Is this book fair?" is really two questions, and jamming them into one number is why territory dashboards get ignored. The skill keeps them apart, as two columns side by side in one table a RevOps lead can read without a decoder ring.
 
-**Kolmogorov-Smirnov distance: is this rep's book as strong as their peers'?** Line up every account in a rep's book by ICP score, and do the same for every other rep in the segment pooled together. Walk up the score scale and, at each point, compare the share of each book that falls below it. The widest of those gaps is the distance. 0 means the rep was dealt the same mix of strong and weak accounts as everyone else; +0.3 means their book skews clearly stronger; −0.3, clearly weaker. Under 0.1 is even. Above 0.25 is a real difference.
+**Kolmogorov-Smirnov distance: is this rep's book as strong as their peers'?** Line up a rep's accounts by ICP score, and do the same for every other rep in the segment pooled together. Walk up the score scale and, at each point, compare the share of each side that falls below it. The widest of those gaps is the distance. 0 means even; +0.3 means clearly stronger; −0.3, clearly weaker. Under 0.1 is even. Above 0.25 is a real difference. It comes with a p-value, so a gap that could be luck is greyed out instead of flagged.
 
-I like the Kolmogorov-Smirnov distance here for two reasons. It's blind to book size, so a rep with 30 accounts and a rep with 300 can both read 0, and quantity stays a separate column instead of leaking into the quality number. And it comes with a p-value, so a ramping rep with eight accounts who looks lopsided by luck is greyed out instead of flagged. Click any distance and the app shows that rep's accounts ranked against the segment, with the two distributions drawn and the gap marked.
+The app reads it two ways, and the gap between them is often the story.
+
+- **On each rep's top N accounts**, the default sort. Take each rep's best N accounts (N is roughly the book a rep can work; it defaults to 50 in Enterprise and 150 in Commercial, and you can change it). A rep with fewer than N accounts has empty slots that count as zero. This one answers "does this rep have as much good opportunity as their peers?". More good accounts reads stronger, a thin book reads weaker, and piling on weak accounts past N doesn't help. Every rep is read on the same N slots, so a small book can't look strong by luck.
+- **On all accounts.** The same distance over whole books. It ignores book size, so a rep with 30 accounts and a rep with 300 can both read 0. This one answers "is their mix as good?".
+
+A big book of average accounts reads positive on top N and negative on all accounts: plenty of opportunity, diluted. A small book of good accounts reads the other way round. Click either number and the app shows that rep's accounts ranked against the segment, with the two distributions drawn and the gap marked.
 
 **Activation: is this rep working their book?** The share of their accounts in the segment that had a meeting, call, or outbound email in the last 90 days. A plain count, every account weighted the same. Nobody works a whole book, so 100% is rare, but a rep at 10% while their peers sit at 60% isn't working what they were given.
 
@@ -66,11 +71,12 @@ The proposals land in a review queue as the app's primary call to action. One dr
 
 The repo ships a runnable demo at [`examples/territory-planning/`](../../../examples/territory-planning) — a fictitious vendor, *Northwind*, with 1,935 accounts and 20 reps (10 Enterprise, 10 Commercial). The data is synthetic, but it's built to show the shapes you'll recognize:
 
-- **Tom Harris** holds the biggest Enterprise book and the strongest one (Kolmogorov-Smirnov distance +0.32) — and works almost none of it (12% Activation). The sitting-on-value quadrant, invisible to an account count.
-- **Marcus Bell** is the other end: a normal-sized Enterprise book that skews clearly weaker than their peers' (Kolmogorov-Smirnov distance −0.30).
+- **Tom Harris** holds the biggest Enterprise book and the strongest one (Kolmogorov-Smirnov distance +0.66 on their top 50, +0.32 on all accounts) — and works almost none of it (12% Activation). The sitting-on-value quadrant, invisible to an account count.
+- **Marcus Bell** is the other end: an Enterprise book that's weaker than their peers' both ways (Kolmogorov-Smirnov distance −0.24 on top 50, −0.30 on all accounts).
 - **James Walker** is the foil: a smaller book with activity on every account (100% Activation).
-- **Grace Mitchell** is a ramping rep at 0% — a small book by design, so a low number reads as "new," not "failing."
-- **Alex Morgan** is the commercial star: the biggest book, the strongest mix (Kolmogorov-Smirnov distance +0.29), and works it hardest.
+- **Grace Mitchell** is a ramping rep with 28 accounts. Their mix looks good by luck (+0.19 on all accounts, greyed as noise), but their top 50 has 22 empty slots (−0.17): a small book is less opportunity.
+- **Alex Morgan** is the commercial star: the biggest book, the most opportunity (Kolmogorov-Smirnov distance +0.62 on top 150), and works it hardest.
+- **Jordan Lee** shows why both readings matter: an average mix (−0.10 on all accounts) but a big book, so their top 150 is stronger than most (+0.16).
 
 Under the current settings the balancer makes 480 proposals — owners for 445 unallocated accounts, 18 wrong-segment handbacks, 17 rebalance moves — which together would take both segments from uneven (CV ≈ 0.3) to balanced (≈ 0.1) if every one were accepted. Which, of course, they shouldn't be blindly. That's what the review queue is for.
 

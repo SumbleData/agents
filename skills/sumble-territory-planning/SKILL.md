@@ -1,6 +1,6 @@
 ---
 name: sumble-territory-planning
-description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (a signed Kolmogorov-Smirnov distance between each rep's book and their peers', clickable to the rep's ranked accounts, next to Activation, the share of accounts worked in 90 days), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
+description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with a book-strength table per segment (signed Kolmogorov-Smirnov distances vs peers on each rep's top N accounts and on all accounts, clickable to the rep's ranked accounts, plus Activation), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
 ---
 
 # Territory Planning
@@ -575,9 +575,9 @@ Write these into `{output_root}/_raw/` with your file tools:
     "company": {"name": "Acme", "url": "acme.com", "folder_slug": "acme"},
     "score_source": {"kind": "custom", "path": "/abs/…/score.csv"},
     "segments": [{"key": "commercial", "label": "Commercial", "order": 1,
-                  "default_capacity": 150},
+                  "default_capacity": 150, "ks_top_n": 150},
                  {"key": "enterprise", "label": "Enterprise", "order": 2,
-                  "default_capacity": 50}],
+                  "default_capacity": 50, "ks_top_n": 50}],
     "boundary": {"metric": "total_employees", "label": "Total employees",
                  "thresholds": [{"segment": "enterprise", "min": 1000}]},
     "activity": {"window_days": 90, "sources": ["google_calendar", "fireflies"],
@@ -586,6 +586,11 @@ Write these into `{output_root}/_raw/` with your file tools:
     "strong_cutoff": 500
   }
   ```
+  `ks_top_n` is optional: how many of each rep's best accounts the top-N
+  Kolmogorov-Smirnov distance compares. Omit it for the defaults (50 for
+  `enterprise`, 150 for `commercial`, else `default_capacity`). `activity.as_of`
+  is optional too: a YYYY-MM-DD end for the window, for replaying an old pull;
+  unset means today.
 - **`ownership.csv`** — `crm_account_id,name,domain,owner,owner_email,owner_is_queue,is_customer`,
   plus a `revenue` (or `crm:{column}`) column when that is the boundary metric
 - **`reps.csv`** — `name,email,segment,is_rep,capacity,in_balance`
@@ -680,50 +685,66 @@ Python 3.10+. Override the port with `python3 app.py 9002` or `PORT=9002`.
 Tell them how to work it, in this order:
 
 1. **Overview** — a **rep heatmap** (this is the home page; there is no separate
-   Reps tab). There is exactly **one table**, book strength; a
-   **segment filter** at the top (`All segments` by default, plus one pill per
-   segment) narrows the rows — every rep by default, or one segment's when
-   filtered. With `All segments`, a **Segment column** labels each row.
+   Reps tab). There is **one table per segment**: a rep is only ever compared
+   with their own segment's peers, so rows never share a scale across
+   segments. A **segment filter** at the top (`All segments` by default, plus
+   one pill per segment) shows every segment's table or just one.
 
-   Rows are reps, with their **In-seg** account count, then **KS** and, when
-   activity is loaded, **Activation**.
-   There is deliberately no top-N depth column: an earlier "average segment rank
-   of the top 25" column confused RevOps users more than it helped, and KS
-   already reads the whole book. The ranked accounts are one click away on the
-   KS value instead.
+   Rows are reps, with their **In-seg** account count, then two
+   Kolmogorov-Smirnov distances and, when activity is loaded, **Activation**.
+   The table sorts by the top-N distance by default. There is deliberately no
+   average-rank depth column: an earlier "average segment rank of the top 25"
+   column confused RevOps users more than it helped.
 
-   Conditional formatting shades each column across all rows shown (both
-   segments). **Every header sorts** — click to
-   sort, click again to flip. Below the table sits the **suggested-moves CTA**
-   (see 3) and then the "also worth a look" flag cards.
+   Conditional formatting shades each column within its segment. **Every
+   header sorts** (one sort shared by every segment's table): click to sort,
+   click again to flip. Below the tables sits the **suggested-moves CTA** (see
+   3) and then the "also worth a look" flag cards.
 
-   The two metric columns, each with a plain-language tooltip on the header:
-   - **KS** (strength table, default sort). The signed two-sample
-     Kolmogorov-Smirnov distance between the scores of the rep's in-segment
-     accounts and the pooled scores of every other rep in the segment: the
-     widest gap between the two cumulative distributions. `0` = the same mix of
-     strong and weak accounts as their peers, `+` = skews stronger, `−` =
-     weaker, `±1` = no overlap. It compares the **mix, not the size** (book size
-     is the In-seg column), so a rep with 30 accounts and one with 300 can both
-     read 0. Green for positive, amber for negative, deeper further from 0.
-     Readings with p ≥ 0.05 are greyed and unshaded: a small book can look
-     different by chance. Player-coaches (`in_balance=0`) get a reading but are
-     never part of anyone else's peer pool.
+   The metric columns, each with a plain-language tooltip on the header. Write
+   the name out as "Kolmogorov-Smirnov distance" when you talk to the user; the
+   user asked for that over "KS".
+   - **Kolmogorov-Smirnov distance, top N** (default sort). Does the rep have as
+     much good opportunity as their peers? It takes the rep's best N accounts by
+     score and each peer's best N, pooled, and measures the widest gap between
+     the two cumulative distributions. A rep with fewer than N accounts has
+     empty slots scoring 0, so a thin book reads weaker; accounts past N don't
+     count, so a pile of weak accounts doesn't help. Every rep in a segment is
+     read on the same N slots, so the noise is the same for all of them. N is
+     per segment: `ks_top_n` on each segment in `territory-plan.json`, default
+     50 for `enterprise`, 150 for `commercial`, else the segment's
+     `default_capacity`, else 50. It is tunable live in the sidebar ("Top N for
+     the Kolmogorov-Smirnov distance").
+   - **Kolmogorov-Smirnov distance, all accounts.** Is the rep's mix as strong
+     as their peers'? The same distance over whole books. It ignores book size,
+     so a rep with 30 accounts and one with 300 can both read 0. Small books
+     read bigger by chance.
 
-     **Clicking a KS value opens the rep's ranking** in the side panel: their
-     in-segment accounts strongest first with segment rank, score and worked
-     status, and a chart of the share of each book scoring at least each score
-     (this rep vs peers) with the widest gap marked. That gap is the KS number.
-     Clicking the rep's name still jumps to the Accounts tab.
+     For both: `0` = even, `+` = stronger, `−` = weaker, `±1` = no overlap.
+     Green for positive, amber for negative, deeper further from 0. Readings
+     with p ≥ 0.05 are greyed and unshaded. Player-coaches (`in_balance=0`) get
+     a reading but are never part of anyone else's peer pool, so a segment
+     whose only other rep is a player-coach shows "—". The two columns
+     disagreeing is the point: a big book of average accounts reads `+` on top
+     N and `−` on all accounts (more opportunity, weaker mix); a small book of
+     good accounts reads the other way round.
+
+     **Clicking either distance opens the rep's ranking** in the side panel:
+     both readings, their in-segment accounts strongest first with segment rank,
+     score and worked status (with a divider where their top N ends), and a
+     chart for the clicked reading: the share of each side scoring at least each
+     score, with the widest gap marked. Clicking the rep's name still jumps to
+     the Accounts tab.
 
      Rough reading guide for users: under 0.1 is even, 0.1–0.25 is worth a
-     look, above 0.25 is a real difference. `merge_territory.py` prints every
-     rep's KS and p-value; quote the significant outliers in the merge summary.
+     look, above 0.25 is a real difference. `merge_territory.py` prints both
+     readings and p-values for every rep; quote the significant outliers in the
+     merge summary.
    - **Activation**. The share of the rep's in-segment accounts with a meeting,
      call, or outbound email in the activity window (`activity.window_days`,
      default 90). A plain count: every account counts the same, with no score
-     weighting. Read it next to KS: a strong book with low Activation is good
-     accounts parked with someone who isn't working them.
+     weighting. Read it next to the distances: a strong book with low
+     Activation is good accounts parked with someone who isn't working them.
 
    Two things make the ranks trustworthy, both learned the hard way:
    - **Rank within a single segment only.** A rep's book mixes segment sizes — a

@@ -2064,3 +2064,16 @@ th.sortable:hover { color: var(--accent); }
 .ks-rank-table th:last-child, .ks-rank-table td:last-child { padding-right: 0; }
 .ks-rank-table tr.ks-acct { cursor: pointer; }
 .ks-rank-table tr.ks-acct:hover td { background: var(--bg); }
+
+/* KS drill-down: accounts past the rep's top N don't count toward the top-N
+   distance, so they sit below a divider and read quieter. */
+.ks-rank-table tr.ks-cut td {
+  padding: 8px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  border-top: 1px dashed var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ks-rank-table tr.ks-past td { color: var(--fg-dim); }

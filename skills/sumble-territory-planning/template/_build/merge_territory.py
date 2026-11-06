@@ -340,14 +340,23 @@ def main() -> None:
             )
     # Book quality vs peers, the Overview's headline column. Printed so the
     # agent can quote the outliers without opening the app.
-    for seg, reps_ks in sorted(tl.ks_by_segment(rows, reps).items()):
+    top_n = {
+        str(s.get("key")): tl.ks_top_n_for(s) for s in plan.get("segments") or []
+    }
+    ks_all = tl.ks_by_segment(rows, reps)
+    for seg, reps_ks in sorted(tl.ks_by_segment(rows, reps, top_n=top_n).items()):
         for name, k in sorted(reps_ks.items(), key=lambda kv: -kv[1]["ks"]):
             if k["n_peers"] == 0:
                 continue
-            noise = "" if k["p"] < tl.KS_SIGNIFICANCE else " (within noise)"
+            whole = ks_all[seg][name]
+
+            def noise(x: dict) -> str:
+                return "" if x["p"] < tl.KS_SIGNIFICANCE else " (within noise)"
+
             print(
-                f"[merge] KS · {seg} · {name}: {k['ks']:+.2f} over {k['n']} accounts "
-                f"vs {k['n_peers']} peer accounts, p={k['p']:.3f}{noise}"
+                f"[merge] Kolmogorov-Smirnov distance · {seg} · {name} (book of {k['n']}): "
+                f"top {k['top_n']} {k['ks']:+.2f}, p={k['p']:.3f}{noise(k)} · "
+                f"all accounts {whole['ks']:+.2f}, p={whole['p']:.3f}{noise(whole)}"
             )
     if unresolved:
         print(

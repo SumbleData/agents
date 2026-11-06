@@ -38,7 +38,7 @@ const state = {
 };
 
 const PAGE_DESCRIPTIONS = {
-  overview: "Whether each rep's book is as strong as their peers' (KS) — plus what needs attention. Click a KS value to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, Activation is the share of their accounts touched in the activity window.",
+  overview: "Whether each rep's book is as strong as their peers' (Kolmogorov-Smirnov distance) — plus what needs attention. Click a distance to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, Activation is the share of their accounts touched in the activity window.",
   accounts: "Every account. Assign any account to anyone with the dropdown in the last column — the Overview books update as you go. Filter by a flag, a rep, a segment, or the balancer's suggested moves (accept/reject inline). Click a row for its activity detail.",
   export: "Download the approved changes for your CRM, or the full sheet with every flag and activity count.",
 };
@@ -382,9 +382,9 @@ function renderOverview() {
   const { ranks, sizes } = segmentRanks();
   const parts = [
     `<p class="eval-diag-sub" id="matrices-note">` +
-    "Two questions per rep: <strong>KS</strong> — is their book as strong as their " +
+    "Two questions per rep: <strong>Kolmogorov-Smirnov distance</strong> — is their book as strong as their " +
     "peers'? (0 = same mix of accounts, + = stronger, − = weaker; " +
-    "<strong>click a KS value</strong> to see their accounts ranked.) " +
+    "<strong>click a distance</strong> to see their accounts ranked.) " +
     "<strong>Activation</strong> — what share of their accounts had a meeting, " +
     "call or email in the activity window? Greener = stronger, down each column. <strong>Click any header to sort</strong>; " +
     "click a rep to open their accounts. Hover any ⓘ for the detail.</p>",
@@ -394,14 +394,14 @@ function renderOverview() {
   // signed so + = stronger. Cached per render; the drill-down reads it too.
   state.ksCache = {};
   const ksCol = {
-    label: "KS", better: "diverging", fmt: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") +
+    label: "Kolmogorov-Smirnov distance", better: "diverging", fmt: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") +
       Math.abs(v).toFixed(2),
     cls: "ks-cell",
-    help: "Is this rep's book as strong as their peers' books? (Kolmogorov–Smirnov " +
-      "distance, on account score.)\n\n" +
+    help: "Is this rep's book as strong as their peers' books? Measured on " +
+      "account score.\n\n" +
       "Line up every account in the rep's book by score, do the same for every other " +
       "rep in the segment pooled together, and find the score where the two differ " +
-      "most. That gap is the KS distance: 0 means the rep got the same mix of strong and " +
+      "most. That gap is the Kolmogorov-Smirnov distance: 0 means the rep got the same mix of strong and " +
       "weak accounts as everyone else, 1 means no overlap at all. + means their book " +
       "skews stronger, − weaker.\n\n" +
       "It compares the MIX, not the size: a rep with 30 accounts and one with 300 can " +
@@ -471,14 +471,14 @@ function renderOverview() {
         allHelp: `What share of this rep's accounts in this segment had a meeting, ` +
           `call, or outbound email in the last ${windowDays} days?\n\n` +
           `A plain count: every account counts the same. Nobody works a whole book, ` +
-          `so 100% is rare. Read it next to KS: a strong book (positive KS) with low ` +
-          `Activation is the expensive combination, good accounts parked with ` +
+          `so 100% is rare. Read it next to the Kolmogorov-Smirnov distance: a strong ` +
+          `book (positive distance) with low Activation is the expensive combination, good accounts parked with ` +
           `someone who isn't working them.` }));
     if (!hasAct) {
       parts.push(
         `<div class="terr-note">No activity data loaded, so Activation cannot be ` +
         `measured. The Activation column and the worked-based flags are hidden ` +
-        `rather than shown as zero. KS is unaffected: it comes from account score ` +
+        `rather than shown as zero. The Kolmogorov-Smirnov distance is unaffected: it comes from account score ` +
         `and ownership only.</div>`);
     }
   }
@@ -662,7 +662,7 @@ function showRepRanking(repName, segKey) {
 
   $("#detail-name").textContent = repName;
   $("#detail-meta").innerHTML =
-    `${esc(segLabel)} · KS <strong>${sign}${Math.abs(k.ks).toFixed(2)}</strong>` +
+    `${esc(segLabel)} · Kolmogorov-Smirnov distance <strong>${sign}${Math.abs(k.ks).toFixed(2)}</strong>` +
     (k.n_peers ? ` · p ${k.p < 0.001 ? "< 0.001" : `= ${k.p.toFixed(3)}`}` : "") +
     ` · ${fmt(k.n)} accounts vs ${fmt(k.n_peers)} peer accounts`;
 
@@ -765,7 +765,7 @@ function ksChartHtml(bookScores, k) {
     </div>
     <p class="eval-diag-sub">Each line is the share of a book scoring at least the
       score on the x axis. The dashed rule marks the widest gap between the two lines:
-      that gap is the KS distance.</p>`;
+      that gap is the Kolmogorov-Smirnov distance.</p>`;
 }
 
 /** Crosshair + tooltip on the KS chart: at the hovered score, the share of this

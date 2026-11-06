@@ -1901,6 +1901,14 @@ th.sortable:hover { color: var(--accent); }
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
+/* Headers wrap rather than truncate: "Kolmogorov-Smirnov distance" is long, and
+   an ellipsis would hide the metric's name. Cells stay on one line. */
+.matrix-table thead th {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  vertical-align: bottom;
+}
 .matrix-table th.num, .matrix-table td.num { text-align: right; }
 .matrix-table td {
   padding: 6px 10px;

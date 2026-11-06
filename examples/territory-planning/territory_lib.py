@@ -84,11 +84,6 @@ DEFAULT_WHITESPACE_TOP_N = 50
 # question. Adjustable live in the app; this is the default / CSV baseline.
 DEFAULT_STRONG_CUTOFF = 500
 
-# Weight the TOP DECILE of a segment gets, relative to the rest of the top
-# quartile (=1), in the Overview's Activation metric. 2 = a top-decile
-# account counts double. Purely a display metric, computed in the app.
-DEFAULT_TIER_DECILE_WEIGHT = 2
-
 
 def rep_in_balance(rep: dict[str, Any]) -> bool:
     """Whether this rep's book counts toward segment balance.

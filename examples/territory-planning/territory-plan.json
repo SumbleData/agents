@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-06T12:20:43-08:00",
+  "generated_at": "2026-11-06T12:45:16-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -269,6 +269,5 @@
     "whitespace_top_n": 0
   },
   "strong_cutoff": 500,
-  "tier_decile_weight": 2,
   "territory_csv": "territory.csv"
 }

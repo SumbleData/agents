@@ -1,6 +1,6 @@
 ---
 name: sumble-territory-planning
-description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (a signed Kolmogorov-Smirnov distance between each rep's book and their peers', clickable to the rep's ranked accounts, plus a coverage table), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
+description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (a signed Kolmogorov-Smirnov distance between each rep's book and their peers', clickable to the rep's ranked accounts, next to Activation, the share of accounts worked in 90 days), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
 ---
 
 # Territory Planning
@@ -77,9 +77,8 @@ does not replace it.
   question is unanswerable, and a table of 0% states the opposite. One helper,
   `territory_lib.has_activity()` (mirrored by `hasActivityData()` in the UI), is
   the single source of truth. When it is false:
-  - the **Coverage matrix** and the **Activation** column are removed, replaced
-    by a short note saying why (Book strength is unaffected — it reads ICP score
-    and ownership only);
+  - the **Activation** column is removed, replaced by a short note saying why
+    (KS is unaffected: it reads ICP score and ownership only);
   - the **not-worked** and **strong-but-idle** flags are removed — with no
     events every owned account trivially satisfies "not worked", so the cards
     would indict the entire book;
@@ -681,14 +680,13 @@ Python 3.10+. Override the port with `python3 app.py 9002` or `PORT=9002`.
 Tell them how to work it, in this order:
 
 1. **Overview** — a **rep heatmap** (this is the home page; there is no separate
-   Reps tab). There are always exactly **two tables** (strength + coverage); a
+   Reps tab). There is exactly **one table**, book strength; a
    **segment filter** at the top (`All segments` by default, plus one pill per
    segment) narrows the rows — every rep by default, or one segment's when
    filtered. With `All segments`, a **Segment column** labels each row.
 
-   Rows are reps, with their **In-seg** account count. The strength table has one
-   metric column, **KS**; the coverage table has **Activation** plus **Whole
-   book** (share of everything they own in the segment that's been touched).
+   Rows are reps, with their **In-seg** account count, then **KS** and, when
+   activity is loaded, **Activation**.
    There is deliberately no top-N depth column: an earlier "average segment rank
    of the top 25" column confused RevOps users more than it helped, and KS
    already reads the whole book. The ranked accounts are one click away on the
@@ -696,11 +694,10 @@ Tell them how to work it, in this order:
 
    Conditional formatting shades each column across all rows shown (both
    segments). **Every header sorts** — click to
-   sort, click again to flip. Below both tables sits the **suggested-moves CTA**
+   sort, click again to flip. Below the table sits the **suggested-moves CTA**
    (see 3) and then the "also worth a look" flag cards.
 
-   Each matrix leads with a **summary column**, the headline metric and the
-   default sort (descending), with a plain-language tooltip on the header:
+   The two metric columns, each with a plain-language tooltip on the header:
    - **KS** (strength table, default sort). The signed two-sample
      Kolmogorov-Smirnov distance between the scores of the rep's in-segment
      accounts and the pooled scores of every other rep in the segment: the
@@ -722,12 +719,11 @@ Tell them how to work it, in this order:
      Rough reading guide for users: under 0.1 is even, 0.1–0.25 is worth a
      look, above 0.25 is a real difference. `merge_territory.py` prints every
      rep's KS and p-value; quote the significant outliers in the merge summary.
-   - **Activation** (coverage table, default sort). Of the segment's top-tier
-     value the rep *holds* (a top-decile account by score counts double, the
-     rest of the top quartile once, everything below zero), the share they're
-     actually working. Book-size-independent, so `0%` is a rep sitting on strong
-     accounts, the clearest read on a player-coach. The top-decile multiplier is
-     the `tier_decile_weight` knob in `territory-plan.json` (default 2).
+   - **Activation**. The share of the rep's in-segment accounts with a meeting,
+     call, or outbound email in the activity window (`activity.window_days`,
+     default 90). A plain count: every account counts the same, with no score
+     weighting. Read it next to KS: a strong book with low Activation is good
+     accounts parked with someone who isn't working them.
 
    Two things make the ranks trustworthy, both learned the hard way:
    - **Rank within a single segment only.** A rep's book mixes segment sizes — a

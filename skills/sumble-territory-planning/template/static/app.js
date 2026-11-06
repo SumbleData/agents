@@ -34,12 +34,11 @@ const state = {
   overviewSegment: "all", // Overview segment filter: "all" = both, else a key
   overviewSort: {         // per-matrix sort; default the summary metric, desc
     strength: { key: "summary", dir: -1 },
-    coverage: { key: "summary", dir: -1 },
   },
 };
 
 const PAGE_DESCRIPTIONS = {
-  overview: "Whether each rep's book is as strong as their peers' (KS) — plus what needs attention. Click a KS value to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, a second table adds how much of their best business they're actually working (Activation).",
+  overview: "Whether each rep's book is as strong as their peers' (KS) — plus what needs attention. Click a KS value to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, Activation is the share of their accounts touched in the activity window.",
   accounts: "Every account. Assign any account to anyone with the dropdown in the last column — the Overview books update as you go. Filter by a flag, a rep, a segment, or the balancer's suggested moves (accept/reject inline). Click a row for its activity detail.",
   export: "Download the approved changes for your CRM, or the full sheet with every flag and activity count.",
 };
@@ -82,9 +81,9 @@ function isWhitespace(r) {
  *
  *  Mirrors territory_lib.has_activity() so the UI and the move engine agree.
  *  When false, every activity-derived surface is REMOVED rather than shown as
- *  zero: the Coverage matrix, the Activation column, the not-worked and
- *  strong-idle flags, and the whole suggested-moves queue. Zero events means
- *  "we cannot tell", and a 0% coverage table states the opposite.
+ *  zero: the Activation column, the not-worked and strong-idle flags, and the
+ *  whole suggested-moves queue. Zero events means "we cannot tell", and a 0%
+ *  Activation column states the opposite.
  *  Memoised — it is read on every render and scans every row. */
 let _hasActivity = null;
 function hasActivityData() {
@@ -377,8 +376,8 @@ function wireMovesCta(root) {
   };
 }
 
-/** The Overview is the book-strength matrices per segment (rank + coverage,
- *  coloured by column) followed by the "needs attention" flag cards. */
+/** The Overview is one book-strength table (KS + Activation per rep and
+ *  segment, coloured by column) followed by the "needs attention" flag cards. */
 function renderOverview() {
   const { ranks, sizes } = segmentRanks();
   const parts = [
@@ -386,25 +385,10 @@ function renderOverview() {
     "Two questions per rep: <strong>KS</strong> — is their book as strong as their " +
     "peers'? (0 = same mix of accounts, + = stronger, − = weaker; " +
     "<strong>click a KS value</strong> to see their accounts ranked.) " +
-    "<strong>Activation</strong> — how much of their best business are they " +
-    "actually working? Greener = stronger, down each column. <strong>Click any header to sort</strong>; " +
+    "<strong>Activation</strong> — what share of their accounts had a meeting, " +
+    "call or email in the activity window? Greener = stronger, down each column. <strong>Click any header to sort</strong>; " +
     "click a rep to open their accounts. Hover any ⓘ for the detail.</p>",
   ];
-
-  // Tier weighting for the Activation summary metric: an account's
-  // weight is by its RANK tier within its segment — top decile ×`decileW`, top
-  // quartile ×1, everything else 0 — times its ICP score. Decile ⊂ quartile.
-  const decileW = num(state.plan.tier_decile_weight) || 2;
-  const tierWeight = (segKey, orgId) => {
-    const n = sizes[segKey] || 0;
-    const rank = ranks[orgId];
-    if (!rank || !n) return 0;
-    if (rank <= Math.ceil(0.10 * n)) return decileW;   // top decile
-    if (rank <= Math.ceil(0.25 * n)) return 1;          // top quartile (not decile)
-    return 0;
-  };
-  const heldTierValue = (book, segKey) =>
-    book.reduce((s, r) => s + num(r.score) * tierWeight(segKey, r.org_id), 0);
 
   // KS: how far this rep's mix of accounts sits from their peers' pooled mix,
   // signed so + = stronger. Cached per render; the drill-down reads it too.
@@ -435,28 +419,6 @@ function renderOverview() {
       return !!k && k.p >= KS_SIGNIFICANCE;
     },
   };
-  // Activation: of the top-tier value the rep holds, the share being worked.
-  const activationCol = {
-    label: "Activation", better: "high", fmt: (v) => `${fmt(v, 0)}%`,
-    help: "Of the best business this rep already owns, how much are they actually " +
-      "working?\n\n" +
-      "The segment's best accounts count here: one in the top 10% by score counts " +
-      "double, one in the top 25% counts once, the rest count zero. We ask what share " +
-      "of that value has had a meeting, call, or outbound email in the activity window. 100% = every good account " +
-      "they own is live; 0% = they're sitting on strong accounts and touching none of " +
-      "them.\n\n" +
-      "This is not about book size — a rep with 30 accounts and a rep with 300 can both " +
-      "be at 100%. Low Activation with a strong book (positive KS) is the expensive " +
-      "combination: the best accounts are parked with someone who isn't working them.",
-    value: (book, grp) => {
-      const held = heldTierValue(book, grp.key);
-      if (held <= 0) return null; // holds no top-tier value — nothing to activate
-      const worked = book.reduce((s, r) =>
-        s + (num(r.worked) ? num(r.score) * tierWeight(grp.key, r.org_id) : 0), 0);
-      return (100 * worked) / held;
-    },
-  };
-
   // Only segments that actually have reps; pick a valid selection ("all" shows
   // every segment, the default).
   const segs = state.segments.filter((seg) =>
@@ -478,7 +440,7 @@ function renderOverview() {
   }
 
   // Build one row-group per shown segment — "All" includes every segment, a
-  // filter narrows to one. Either way there are exactly TWO tables below.
+  // filter narrows to one. Either way there is ONE table below.
   const shown = selKey === "all" ? segs : segs.filter((s) => s.key === selKey);
   const groups = shown.map((seg) => ({
     key: seg.key,
@@ -498,30 +460,26 @@ function renderOverview() {
     const windowDays = fmt(state.plan.activity?.window_days || 90);
     parts.push(
       `<h3 class="terr-h3">Book strength <span class="terr-sub">${ctx}</span></h3>`);
+    // Activation is ENTIRELY activity-derived. With no events loaded it would
+    // read 0% for every rep, indistinguishable from a team working nothing, so
+    // the column is dropped and a note says why.
+    const hasAct = hasActivityData();
     parts.push(renderMatrix(
-      groups, null, "high", null, ksCol,
-      { matrixId: "strength", sort: state.overviewSort.strength }));
-
-    // Coverage is ENTIRELY activity-derived. With no events loaded it would
-    // render every rep at 0% — indistinguishable from a team working nothing —
-    // so drop the table and say why instead.
-    if (hasActivityData()) {
+      groups, hasAct ? workedPctOf : null, "high", (v) => `${fmt(v, 0)}%`, ksCol,
+      { matrixId: "strength", sort: state.overviewSort.strength,
+        allLabel: hasAct ? "Activation" : "",
+        allHelp: `What share of this rep's accounts in this segment had a meeting, ` +
+          `call, or outbound email in the last ${windowDays} days?\n\n` +
+          `A plain count: every account counts the same. Nobody works a whole book, ` +
+          `so 100% is rare. Read it next to KS: a strong book (positive KS) with low ` +
+          `Activation is the expensive combination, good accounts parked with ` +
+          `someone who isn't working them.` }));
+    if (!hasAct) {
       parts.push(
-        `<h3 class="terr-h3">Coverage <span class="terr-sub">` +
-        `share worked in the last ${windowDays} days</span></h3>`);
-      parts.push(renderMatrix(
-        groups, (slice) => workedPctOf(slice), "high", (v) => `${fmt(v, 0)}%`, activationCol,
-        { matrixId: "coverage", sort: state.overviewSort.coverage, allLabel: "Whole book",
-          allHelp: `Of every account this rep owns in this segment, the share touched in ` +
-            `the last ${windowDays} days. Compare it with Activation: much lower is fine ` +
-            `(nobody works a whole book); much higher means they're spending time on ` +
-            `weaker accounts.` }));
-    } else {
-      parts.push(
-        `<div class="terr-note">No activity data loaded, so coverage cannot be ` +
-        `measured — the Coverage table, the Activation column and the ` +
-        `worked-based flags are hidden rather than shown as zero. Book strength ` +
-        `below is unaffected: it comes from ICP score and ownership only.</div>`);
+        `<div class="terr-note">No activity data loaded, so Activation cannot be ` +
+        `measured. The Activation column and the worked-based flags are hidden ` +
+        `rather than shown as zero. KS is unaffected: it comes from account score ` +
+        `and ownership only.</div>`);
     }
   }
   $("#overview-segments").innerHTML = parts.join("");
@@ -842,18 +800,15 @@ function workedPctOf(slice) {
   return (100 * slice.filter((r) => num(r.worked)).length) / slice.length;
 }
 
-/** One matrix over one or more segment `groups` — a single table. When more than
+/** The Overview matrix over one or more segment `groups`, as a single table. When more than
  *  one segment is shown, a **Segment column** labels each row. `valueOf(slice)` →
- *  the number the whole-book cell shows (or null); `better` is which direction
+ *  the number the extra column shows (or null); `better` is which direction
  *  is good; `fmtVal` formats it. Colours are assigned per COLUMN **within each segment**,
  *  so ranks drawn from different segment universes are never shaded against each
  *  other, even though the rows share one table.
  *
- *  `opts.allLabel` adds a whole-book column under that heading; omit it and the
- *  table is just the summary metric. Book strength omits it (KS already reads the
- *  whole book); coverage keeps it,
- *  because "what share of everything they own is being touched" is a fair
- *  question with a plain answer. */
+ *  `opts.allLabel` adds a column after the summary under that heading (the
+ *  Overview's Activation); omit it and the table is just the summary metric. */
 function renderMatrix(groups, valueOf, better, fmtVal, summary, opts) {
   const showSeg = groups.length > 1;
   const sort = opts.sort;

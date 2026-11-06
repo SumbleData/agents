@@ -151,9 +151,6 @@ def main() -> None:
         "strong_cutoff": tl.to_int(
             spec.get("strong_cutoff"), tl.DEFAULT_STRONG_CUTOFF
         ),
-        "tier_decile_weight": tl.to_int(
-            spec.get("tier_decile_weight"), tl.DEFAULT_TIER_DECILE_WEIGHT
-        ),
         "territory_csv": "territory.csv",
     }
 

@@ -394,7 +394,6 @@ def main() -> None:
         },
         "whitespace_top_n": 0,
         "strong_cutoff": 500,
-        "tier_decile_weight": 2,
     }
     with open(raw / "spec.json", "w", encoding="utf-8") as f:
         json.dump(spec, f, indent=2)

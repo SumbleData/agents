@@ -1916,7 +1916,7 @@ th.sortable:hover { color: var(--accent); }
 /* Segment column inside a matrix (only present when >1 segment is displayed). */
 .matrix-table .seg-cell { font-size: 12px; color: var(--fg-dim); white-space: nowrap; }
 
-/* KS / Activation summary column — set off from the columns after it. */
+/* KS summary column — set off from the columns after it. */
 .matrix-table .summary-cell { font-weight: 650; border-right: 2px solid var(--border); }
 .matrix-table th:nth-child(1) { min-width: 8ch; }
 

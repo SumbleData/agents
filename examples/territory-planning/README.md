@@ -1,7 +1,7 @@
 # Territory Planning — demo
 
 A public, self-contained demo of the [`sumble-territory-planning`](../../skills/sumble-territory-planning)
-skill's app: per-segment **book-strength heatmaps** (KS distance vs peers and
+skill's app: a **book-strength table** (KS distance vs peers and
 Activation; click a KS value to see that rep's accounts ranked), a live **Calibrate**
 sidebar (segment boundary, per-rep capacity, strong-account cutoff), a
 granular **Accounts** tab where you assign any account to anyone, and a
@@ -32,8 +32,8 @@ python3 app.py          # http://localhost:8002
 
 The seeded numbers tell a story on purpose: one enterprise rep (*Tom Harris*)
 holds the segment's biggest and strongest book but works almost none of it
-(**KS +0.32, 4% Activation**, sitting on value); the
-foil (*James Walker*) works their top tier to **100%**; one ramping rep
+(**KS +0.32, 12% Activation**, sitting on value); the
+foil (*James Walker*) has activity on every account (**100%**); one ramping rep
 (*Grace Mitchell*) sits at **0%**; and the commercial star (*Alex Morgan*) both
 captures and activates the most in that segment. So the heatmaps, the
 KS/Activation columns, the attention flags, and the Calibrate/Moves flows

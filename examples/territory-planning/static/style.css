@@ -28,6 +28,11 @@
 html, body {
   margin: 0;
   padding: 0;
+  /* Nothing may widen the PAGE. Wide content (the rep matrices, the accounts
+     sheet) scrolls inside its own .table-wrap; without this a single wide table
+     drags the whole layout sideways and cuts off the topbar buttons. */
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -47,9 +52,13 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
   padding: 14px 22px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .brand {
@@ -78,6 +87,11 @@ button {
   display: flex;
   gap: 8px;
   align-items: center;
+  /* Let the meta text shrink/wrap rather than push the export buttons off the
+     right edge on a narrow window. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 #customer-name {
@@ -890,6 +904,11 @@ button {
 .table-wrap {
   max-height: calc(100vh - 200px);
   overflow-y: auto;
+  /* Wide tables must scroll inside their own box. Without this the table pushes
+     the page itself wider than the viewport and the whole layout scrolls
+     sideways — which is what made Book strength run off screen. */
+  overflow-x: auto;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -898,6 +917,42 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+/* Rep matrices ALWAYS fit their container. `table-layout: fixed` is the load-
+   bearing part: with auto layout the browser sizes columns to content, so a long
+   rep name or a wide header pushes the table past the viewport no matter what
+   width you ask for. Fixed layout distributes the available width instead, and
+   the cells ellipsise rather than expand. */
+.matrix-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.matrix-table th,
+.matrix-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Give the rep name the slack and keep the numeric columns compact — with fixed
+   layout the browser would otherwise split every column equally. */
+.matrix-table th:first-child,
+.matrix-table td:first-child {
+  width: 30%;
+}
+
+/* Explanatory note standing in for a suppressed table (e.g. Coverage hidden
+   because no activity is loaded). */
+.terr-note {
+  margin: 4px 0 18px 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-dim);
 }
 
 th, td {
@@ -1861,7 +1916,7 @@ th.sortable:hover { color: var(--accent); }
 /* Segment column inside a matrix (only present when >1 segment is displayed). */
 .matrix-table .seg-cell { font-size: 12px; color: var(--fg-dim); white-space: nowrap; }
 
-/* Capture / Activation summary column — set off from the depth bands. */
+/* KS / Activation summary column — set off from the columns after it. */
 .matrix-table .summary-cell { font-weight: 650; border-right: 2px solid var(--border); }
 .matrix-table th:nth-child(1) { min-width: 8ch; }
 
@@ -1968,3 +2023,36 @@ th.sortable:hover { color: var(--accent); }
 }
 .detail-table { width: 100%; }
 .detail-table td { padding: 5px 0; border-bottom: 1px solid var(--border); }
+
+/* KS column: each value opens the rep's ranked accounts. */
+.matrix-table td.ks-cell[data-rep] { cursor: pointer; text-decoration: underline dotted var(--fg-muted); text-underline-offset: 3px; }
+.matrix-table td.ks-cell[data-rep]:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+.matrix-table td.ks-muted { color: var(--fg-muted); font-weight: 500; }
+
+/* KS drill-down chart (detail panel). */
+.ks-legend { display: flex; gap: 14px; font-size: 12px; color: var(--fg-dim); margin: 8px 0 4px; }
+.ks-swatch { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.ks-swatch-rep { border-color: #16A34A; }
+.ks-swatch-peer { border-color: #4F6BD8; border-top-style: dashed; }
+.ks-chart-wrap { position: relative; }
+#ks-chart { width: 100%; height: auto; display: block; }
+.ks-grid { stroke: var(--border); stroke-width: 1; }
+.ks-axis { font-size: 10px; fill: var(--fg-dim); }
+.ks-label { font-size: 10px; fill: var(--fg); paint-order: stroke; stroke: var(--bg-card); stroke-width: 3px; stroke-linejoin: round; }
+.ks-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.ks-line-rep { stroke: #16A34A; }
+.ks-line-peer { stroke: #4F6BD8; stroke-dasharray: 4 3; }
+.ks-gap { stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: 2 2; }
+.ks-cross { stroke: var(--fg-muted); stroke-width: 1; pointer-events: none; }
+.ks-tip {
+  position: absolute; pointer-events: none; background: var(--bg-card);
+  border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: var(--shadow-md);
+  padding: 6px 8px; font-size: 12px; color: var(--fg); white-space: nowrap;
+}
+.ks-tip.hidden { display: none; }
+.ks-rank-table th { font-size: 11px; color: var(--fg-dim); text-align: left; padding: 4px 8px 4px 0; white-space: nowrap; border-bottom: 1px solid var(--border-strong); }
+.ks-rank-table th.num { text-align: right; }
+.ks-rank-table td { padding: 5px 8px 5px 0; vertical-align: top; }
+.ks-rank-table th:last-child, .ks-rank-table td:last-child { padding-right: 0; }
+.ks-rank-table tr.ks-acct { cursor: pointer; }
+.ks-rank-table tr.ks-acct:hover td { background: var(--bg); }

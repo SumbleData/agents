@@ -85,7 +85,7 @@ DEFAULT_WHITESPACE_TOP_N = 50
 DEFAULT_STRONG_CUTOFF = 500
 
 # Weight the TOP DECILE of a segment gets, relative to the rest of the top
-# quartile (=1), in the Overview's Capture / Activation metrics. 2 = a top-decile
+# quartile (=1), in the Overview's Activation metric. 2 = a top-decile
 # account counts double. Purely a display metric, computed in the app.
 DEFAULT_TIER_DECILE_WEIGHT = 2
 
@@ -254,6 +254,10 @@ def resolve_size_column(spec: dict[str, Any], header: Iterable[str]) -> str:
       total_employees   -> employee_count_int
       jf_people:<Name>  -> jf_people, else <slug-of-name>_people (the column an
                            account-scoring run already emits for that persona)
+      score             -> the account score itself (`score` from an
+                           account-scoring run, `sumble_score` on Path B)
+      revenue, crm:<c>  -> CRM_METRIC_COLUMN, which attach_crm_metric() fills
+                           from ownership.csv before this is read
       custom:<column>   -> that column verbatim
     """
     boundary = spec.get("boundary") or {}
@@ -262,6 +266,10 @@ def resolve_size_column(spec: dict[str, Any], header: Iterable[str]) -> str:
     if explicit:
         return explicit
     metric = str(boundary.get("metric") or "total_employees").strip()
+    if metric == "score":
+        return "score" if "score" in cols else "sumble_score"
+    if crm_metric_source(metric):
+        return CRM_METRIC_COLUMN
     if metric.startswith("custom:"):
         return metric.split(":", 1)[1].strip()
     if metric.startswith("jf_people:"):
@@ -271,6 +279,104 @@ def resolve_size_column(spec: dict[str, Any], header: Iterable[str]) -> str:
                 return cand
         return "jf_people"
     return "employee_count_int"
+
+
+# Where a CRM-sourced boundary value lands on each account row. Sumble has no
+# revenue data, so "Enterprise is $500M+ revenue" has to come from the CRM
+# (Salesforce Account.AnnualRevenue, HubSpot annualrevenue) via ownership.csv.
+CRM_METRIC_COLUMN = "crm_metric"
+
+
+def metric_label(metric: str) -> str:
+    """Default display name for a boundary metric, used when the spec has none."""
+    metric = str(metric or "").strip()
+    if metric == "total_employees":
+        return "Total employees"
+    if metric == "score":
+        return "Account score"
+    if metric == "revenue":
+        return "Annual revenue"
+    if ":" in metric:
+        kind, name = metric.split(":", 1)
+        return f"{name.strip()} headcount" if kind == "jf_people" else name.strip()
+    return metric
+
+
+def crm_metric_source(metric: str) -> str:
+    """The ownership.csv column a boundary metric reads, or "" when the metric
+    comes from Sumble / the score table instead. `revenue` is shorthand for
+    `crm:revenue`."""
+    metric = str(metric or "").strip()
+    if metric == "revenue":
+        return "revenue"
+    if metric.startswith("crm:"):
+        return metric.split(":", 1)[1].strip()
+    return ""
+
+
+def attach_crm_metric(
+    acct_rows: list[dict[str, Any]], ownership: list[dict[str, Any]], column: str
+) -> int:
+    """Copy a numeric CRM field from ownership.csv onto the account rows as
+    CRM_METRIC_COLUMN, in place. Matches on CRM id, then domain, then name —
+    the same order merge_territory resolves ownership. When several CRM records
+    land on one account, the largest value wins (a parent and a subsidiary
+    record should not drag the parent down a segment).
+
+    Returns how many account rows got a value. Rows with none read 0 and fall
+    into the smallest segment, which the calibrator warns about.
+    """
+    by_id: dict[str, float] = {}
+    by_domain: dict[str, float] = {}
+    by_name: dict[str, float] = {}
+    for o in ownership:
+        raw = str(o.get(column) or "").strip()
+        if not raw:
+            continue
+        val = to_float(raw)
+        cid = str(o.get("crm_account_id") or "").strip()
+        dom = norm_domain(o.get("domain") or o.get("url"))
+        nm = str(o.get("name") or "").strip().lower()
+        for key, idx in ((cid, by_id), (dom, by_domain), (nm, by_name)):
+            if key:
+                idx[key] = max(idx.get(key, val), val)
+
+    filled = 0
+    for r in acct_rows:
+        vals = [
+            by_id.get(str(r.get(k) or "").strip())
+            for k in ("crm_account_id", "crm_id")
+        ]
+        dom = norm_domain(r.get("url") or r.get("domain") or r.get("input_domain"))
+        nm = str(r.get("name") or r.get("crm_account_name") or "").strip().lower()
+        val = next((v for v in vals if v is not None), None)
+        if val is None:
+            val = by_domain.get(dom) if dom else None
+        if val is None:
+            val = by_name.get(nm) if nm else None
+        r[CRM_METRIC_COLUMN] = val if val is not None else 0.0
+        if val is not None:
+            filled += 1
+    return filled
+
+
+def prepare_boundary_metric(
+    spec: dict[str, Any], acct_rows: list[dict[str, Any]], ownership: list[dict[str, Any]]
+) -> str:
+    """Make sure the boundary metric is readable on every account row, and
+    return the column that carries it. The one call calibrate_split and
+    merge_territory both make, so they can't size accounts differently."""
+    metric = str((spec.get("boundary") or {}).get("metric") or "total_employees")
+    source = crm_metric_source(metric)
+    if source and acct_rows:
+        if not any(source in o for o in ownership):
+            raise SystemExit(
+                f"boundary metric '{metric}' reads the '{source}' column of "
+                "ownership.csv, and that column is missing. Pull it from the CRM "
+                "(Salesforce AnnualRevenue, HubSpot annualrevenue) or pick another metric."
+            )
+        attach_crm_metric(acct_rows, ownership, source)
+    return resolve_size_column(spec, acct_rows[0].keys() if acct_rows else [])
 
 
 def segment_for_size(value: float, boundary: dict[str, Any], segments: list[dict[str, Any]]) -> str:
@@ -343,19 +449,149 @@ def balance_label(cv: float) -> str:
     return "imbalanced"
 
 
-def snap_to_human(value: float) -> int:
-    """Snap a computed threshold to the nearest defensible round number.
-    Ratio distance, not absolute: 700 is closer to 500 than to 1000 on a log
-    scale, which is how company sizes actually distribute."""
-    if value <= 0:
-        return HUMAN_THRESHOLDS[0]
-    best = HUMAN_THRESHOLDS[0]
-    best_dist = float("inf")
-    for t in HUMAN_THRESHOLDS:
-        dist = abs(math.log(value / t))
-        if dist < best_dist:
-            best, best_dist = t, dist
-    return best
+def is_log_scaled(metric: str) -> bool:
+    """Headcounts and revenue are log-distributed, so the calibrator clusters
+    and snaps them in log space. An account score is not: 60 vs 70 is the same
+    gap as 80 vs 90."""
+    return str(metric or "").strip() != "score"
+
+
+def human_candidates(metric: str, lo: float, hi: float) -> list[float]:
+    """Round numbers a sales leader would say out loud, covering [lo, hi].
+
+    Log-scaled metrics use the 1 / 2.5 / 5 ladder at every power of ten
+    (…250, 500, 1,000, 2,500… employees; $10M, $25M, $50M… revenue), which is
+    HUMAN_THRESHOLDS extended to any scale. A score uses multiples of 5.
+    """
+    if not is_log_scaled(metric):
+        lo5 = math.floor(min(lo, hi) / 5.0) * 5
+        hi5 = math.ceil(max(lo, hi) / 5.0) * 5
+        return [float(v) for v in range(int(lo5), int(hi5) + 5, 5)] or [5.0]
+    lo = max(lo, 1.0)
+    hi = max(hi, lo)
+    out: list[float] = []
+    for exp in range(int(math.floor(math.log10(lo))) - 1, int(math.ceil(math.log10(hi))) + 1):
+        for m in (1.0, 2.5, 5.0):
+            v = m * 10.0**exp
+            if v >= 1:
+                out.append(float(round(v)) if v >= 10 else v)
+    return sorted(set(out)) or [float(HUMAN_THRESHOLDS[0])]
+
+
+def snap_distance(metric: str, value: float, candidate: float) -> float:
+    """How far a candidate is from the computed threshold: ratio distance on a
+    log-scaled metric (700 is closer to 500 than to 1,000), plain distance on a
+    score."""
+    if not is_log_scaled(metric):
+        return abs(value - candidate)
+    return abs(math.log(max(value, 1e-9) / max(candidate, 1e-9)))
+
+
+def snap_to_human(value: float, metric: str = "total_employees") -> float | int:
+    """Snap a computed threshold to the nearest defensible round number."""
+    if is_log_scaled(metric) and value <= 0:
+        return float(HUMAN_THRESHOLDS[0])
+    cands = human_candidates(metric, value, value)
+    best = min(cands, key=lambda c: (snap_distance(metric, value, c), c))
+    return int(best) if float(best).is_integer() else best
+
+
+# ---------------------------------------------------------------------------
+# Book quality vs peers: the Kolmogorov-Smirnov distance
+# ---------------------------------------------------------------------------
+
+# A KS reading this likely to be chance is shown muted in the app, not hidden:
+# a small book can look very different from its peers by luck alone.
+KS_SIGNIFICANCE = 0.05
+
+
+def ks_pvalue(d: float, n: int, m: int) -> float:
+    """Asymptotic two-sample KS p-value (the Kolmogorov distribution, with
+    Stephens' small-sample correction). Good enough to tell "different" from
+    "noise"; not a substitute for an exact test on tiny books."""
+    if n <= 0 or m <= 0 or d <= 0:
+        return 1.0
+    ne = n * m / (n + m)
+    lam = (math.sqrt(ne) + 0.12 + 0.11 / math.sqrt(ne)) * d
+    total = 0.0
+    for k in range(1, 101):
+        term = 2.0 * (-1) ** (k - 1) * math.exp(-2.0 * k * k * lam * lam)
+        total += term
+        if abs(term) < 1e-10:
+            break
+    return max(0.0, min(1.0, total))
+
+
+def ks_signed(book: list[float], peers: list[float]) -> tuple[float, float]:
+    """Signed two-sample KS distance between a rep's account scores and their
+    peers' pooled scores, plus its p-value.
+
+    The magnitude is the usual D: the widest vertical gap between the two
+    cumulative distributions. The sign says which way the gap points:
+    POSITIVE = the rep's book sits higher on score (fewer of their accounts
+    are below any given score than their peers'), NEGATIVE = weaker.
+
+    KS only sees order, so ranking by score or by in-segment rank gives the
+    same answer, and it does not care how many accounts the rep holds — it
+    compares the mix, not the size. Ties are handled by stepping past every
+    equal value before measuring the gap.
+    """
+    if not book or not peers:
+        return 0.0, 1.0
+    a = sorted(book)
+    b = sorted(peers)
+    n, m = len(a), len(b)
+    i = j = 0
+    best, best_abs = 0.0, 0.0
+    for x in sorted(set(a) | set(b)):
+        while i < n and a[i] <= x:
+            i += 1
+        while j < m and b[j] <= x:
+            j += 1
+        gap = j / m - i / n  # > 0: peers have more mass at or below x
+        if abs(gap) > best_abs + 1e-12:
+            best, best_abs = gap, abs(gap)
+    return round(best, 4), ks_pvalue(best_abs, n, m)
+
+
+def ks_by_segment(
+    rows: list[dict[str, Any]],
+    reps: list[dict[str, Any]],
+    owner_field: str = "owner",
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """segment -> rep -> {ks, p, n, n_peers} for every rep with an in-segment
+    book. Mirrors ksForRep() in static/app.js.
+
+    A rep's book is the accounts they own whose size puts them in the rep's
+    own segment (whitespace excluded) — the same in-segment book the Overview
+    ranks. Peers are the other reps in that segment who count toward balance;
+    a player-coach (in_balance=0) still gets a reading but never sets the norm
+    for anyone else.
+    """
+    seg_of = {str(r.get("name") or ""): str(r.get("segment") or "") for r in reps
+              if truthy(r.get("is_rep", "1"))}
+    in_bal = {str(r.get("name") or ""): rep_in_balance(r) for r in reps}
+    books: dict[str, list[float]] = {}
+    for row in rows:
+        if str(row.get("account_category") or "") in WHITESPACE_CATEGORIES:
+            continue
+        owner = str(row.get(owner_field) or "")
+        seg = seg_of.get(owner)
+        if not seg or str(row.get("account_segment") or "") != seg:
+            continue
+        books.setdefault(owner, []).append(to_float(row.get("score")))
+
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for rep, book in sorted(books.items()):
+        seg = seg_of[rep]
+        peers = [
+            s for other, ob in books.items()
+            if other != rep and seg_of.get(other) == seg and in_bal.get(other, True)
+            for s in ob
+        ]
+        d, p = ks_signed(book, peers)
+        out.setdefault(seg, {})[rep] = {"ks": d, "p": p, "n": len(book), "n_peers": len(peers)}
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -665,6 +901,25 @@ def _propose(row: dict[str, Any], new_owner: str, reason: str) -> None:
     row["proposal_status"] = "suggested"
 
 
+def has_activity(rows: list[dict[str, Any]]) -> bool:
+    """True when ANY row carries a real activity event.
+
+    The single source of truth for "is activity loaded", shared by the CLI, the
+    app's move engine, and the UI — so all three agree on whether coverage means
+    anything. Zero events is NOT the same as zero coverage: it means the
+    question is unanswerable, and everything that reads `worked` has to be
+    suppressed rather than displayed as 0%.
+    """
+    return any(
+        to_float(r.get("meetings"))
+        + to_float(r.get("calls"))
+        + to_float(r.get("emails_out"))
+        + to_float(r.get("emails_in"))
+        > 0
+        for r in rows
+    )
+
+
 def suggest_moves(
     plan: dict[str, Any], rows: list[dict[str, Any]], reset: bool = False
 ) -> dict[str, Any]:
@@ -677,6 +932,13 @@ def suggest_moves(
     rebalance — because moving an account someone already has a relationship
     with costs more than assigning one nobody owns. The hard constraint
     everywhere: an account with activity is NEVER proposed for a move.
+
+    NO ACTIVITY LOADED => NO MOVES. That constraint is the only thing stopping
+    the mover from reassigning an account a rep is mid-deal on, and it is
+    enforced by reading `worked`. With no activity events every row reads
+    not-worked, so the rail is silently inert and every account looks fair game.
+    Proposing moves in that state is worse than proposing none, so the whole
+    engine no-ops and reports why.
 
     Decisions the user already made (accepted / rejected / manual) survive
     unless `reset`, so re-running after a review session refines the plan
@@ -702,6 +964,32 @@ def suggest_moves(
             row["proposed_owner"] = ""
             row["proposal_reason"] = ""
             row["proposal_status"] = ""
+
+    # See the docstring: without activity the "never move a worked account" rail
+    # cannot fire, so no automated proposal is trustworthy. Clear the pipeline's
+    # own suggestions (done just above) and stop. The user's accepted / manual /
+    # rejected decisions are untouched.
+    if not has_activity(rows):
+        zero_counts = {
+            "misfit": 0,
+            "assign_unallocated": 0,
+            "assign_whitespace": 0,
+            "rebalance": 0,
+        }
+        return {
+            "skipped_no_activity": True,
+            "counts": zero_counts,
+            "total": 0,
+            "cv_before": {s["key"]: 0.0 for s in segments},
+            "after_stats": book_stats(rows, all_reps, balance_cats),
+            "skipped_worked_misfits": 0,
+            "skipped_coach_misfits": 0,
+            "coach_names": sorted(coach_names),
+            "unrouted": {},
+            "frozen": sum(
+                1 for r in rows if str(r.get("proposal_status") or "") in FROZEN_STATUSES
+            ),
+        }
 
     reps_by_segment: dict[str, list[dict[str, Any]]] = {}
     for r in reps:

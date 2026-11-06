@@ -87,8 +87,8 @@ def main() -> None:
     acct_rows, score_col, score_source = load_account_table(raw, plan)
     if not acct_rows:
         sys.exit("[merge] the account table is empty.")
-    size_col = tl.resolve_size_column(
-        {"boundary": boundary}, acct_rows[0].keys()
+    size_col = tl.prepare_boundary_metric(
+        {"boundary": boundary}, acct_rows, tl.read_csv(raw / "ownership.csv")
     )
     if size_col not in acct_rows[0]:
         sys.exit(
@@ -175,8 +175,9 @@ def main() -> None:
         })
 
     # --- 3. activity + pipeline ----------------------------------------------
-    window = tl.to_int((plan.get("activity") or {}).get("window_days"), 90) or 90
-    activity = tl.load_activity(raw, window)
+    act_cfg = plan.get("activity") or {}
+    window = tl.to_int(act_cfg.get("window_days"), 90) or 90
+    activity = tl.load_activity(raw, window, tl.parse_date(act_cfg.get("as_of")))
     pipeline = {
         tl.norm_domain(p.get("domain") or p.get("url")): tl.to_float(p.get("pipeline_value"))
         for p in tl.read_csv(raw / "pipeline.csv")
@@ -336,6 +337,17 @@ def main() -> None:
             print(
                 f"[merge] balance · {seg}: CV {b['cv']:.2f} ({b['label']}) "
                 f"across {n} reps{extra}"
+            )
+    # Book quality vs peers, the Overview's headline column. Printed so the
+    # agent can quote the outliers without opening the app.
+    for seg, reps_ks in sorted(tl.ks_by_segment(rows, reps).items()):
+        for name, k in sorted(reps_ks.items(), key=lambda kv: -kv[1]["ks"]):
+            if k["n_peers"] == 0:
+                continue
+            noise = "" if k["p"] < tl.KS_SIGNIFICANCE else " (within noise)"
+            print(
+                f"[merge] KS · {seg} · {name}: {k['ks']:+.2f} over {k['n']} accounts "
+                f"vs {k['n_peers']} peer accounts, p={k['p']:.3f}{noise}"
             )
     if unresolved:
         print(

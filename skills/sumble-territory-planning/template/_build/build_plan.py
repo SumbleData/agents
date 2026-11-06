@@ -117,7 +117,8 @@ def main() -> None:
         "boundary": {
             "metric": str(boundary.get("metric") or "total_employees"),
             "column": boundary.get("column") or None,
-            "label": boundary.get("label") or "",
+            "label": boundary.get("label")
+            or tl.metric_label(str(boundary.get("metric") or "total_employees")),
             "thresholds": [
                 {"segment": str(t.get("segment")), "min": tl.to_float(t.get("min"))}
                 for t in sorted(thresholds, key=lambda t: tl.to_float(t.get("min")), reverse=True)
@@ -127,6 +128,9 @@ def main() -> None:
         "activity": {
             "window_days": tl.to_int(activity.get("window_days"), 90) or 90,
             "sources": list(activity.get("sources") or []),
+            # Optional end of the window (YYYY-MM-DD). Unset means today; a fixed
+            # date replays a snapshot, such as the public demo's synthetic calendar.
+            "as_of": str(activity.get("as_of") or ""),
             "company_domain": company_domain,
             "freemail_excludes": sorted(tl.FREEMAIL_DOMAINS),
         },

@@ -1,8 +1,8 @@
 # Territory Planning — demo
 
 A public, self-contained demo of the [`sumble-territory-planning`](../../skills/sumble-territory-planning)
-skill's app: per-segment **book-strength heatmaps** (Capture / Activation, each
-with the rep's **top 25** by average in-segment rank), a live **Calibrate**
+skill's app: per-segment **book-strength heatmaps** (KS distance vs peers and
+Activation; click a KS value to see that rep's accounts ranked), a live **Calibrate**
 sidebar (segment boundary, per-rep capacity, strong-account cutoff), a
 granular **Accounts** tab where you assign any account to anyone, and a
 suggest → accept/reject → **Export** flow.
@@ -30,13 +30,13 @@ python3 app.py          # http://localhost:8002
   drifts outside that band — otherwise "Target accounts per rep" in the
   Calibrate panel would be describing something the data doesn't do.
 
-The seeded numbers tell a story on purpose: one enterprise rep (*Chen Wei*)
-holds the segment's biggest book and a third of its best accounts but works
-almost none of them (**33% Capture, 6% Activation** — sitting on value); the
-foil (*Dev Ramesh*) works their top tier to **100%**; one ramping rep
-(*Grace Okafor*) sits at **0%**; and the commercial star (*Alex Rivera*) both
+The seeded numbers tell a story on purpose: one enterprise rep (*Tom Harris*)
+holds the segment's biggest and strongest book but works almost none of it
+(**KS +0.32, 4% Activation**, sitting on value); the
+foil (*James Walker*) works their top tier to **100%**; one ramping rep
+(*Grace Mitchell*) sits at **0%**; and the commercial star (*Alex Morgan*) both
 captures and activates the most in that segment. So the heatmaps, the
-Capture/Activation columns, the attention flags, and the Calibrate/Moves flows
+KS/Activation columns, the attention flags, and the Calibrate/Moves flows
 all have something to show.
 
 ## Rebuild from source

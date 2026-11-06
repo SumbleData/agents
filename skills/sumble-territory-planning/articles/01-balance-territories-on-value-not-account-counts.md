@@ -20,7 +20,7 @@ Two reps with 75 accounts each can hold completely different books. One has eigh
 
 Concentration is invisible to a headcount split precisely because it's about *which* accounts, not *how many*. So stop measuring the size of the pile and start measuring its value.
 
-## Two questions, kept apart: Kolmogorov-Smirnov distance and Activation
+## Two questions, kept apart: Kolmogorov-Smirnov distance and Activity
 
 "Is this book fair?" is really two questions, and jamming them into one number is why territory dashboards get ignored. The skill keeps them apart, as separate columns a RevOps lead can read without a decoder ring.
 
@@ -33,9 +33,9 @@ The app reads it two ways, and the gap between them is often the story.
 
 A big book of average accounts reads positive on top N and negative on all accounts: plenty of opportunity, diluted. A small book of good accounts reads the other way round. Click either number and the app shows that rep's accounts ranked against the segment, with the two distributions drawn and the gap marked.
 
-**Activation: is this rep working their book?** The share of their accounts in the segment that had a meeting, call, or outbound email in the last 90 days. A plain count, every account weighted the same. Nobody works a whole book, so 100% is rare, but a rep at 10% while their peers sit at 60% isn't working what they were given.
+**Activity: is this rep working their book?** The share of their accounts that had a meeting, call, or outbound email in the last 90 days, read the same two ways: on their top N accounts and on all of them. A plain count, every account weighted the same. Nobody works a whole book, so 100% on all accounts is rare. The top-N number is the one to watch: a rep with a strong top N and low Activity on it is sitting on their best accounts.
 
-Splitting them turns a vague "seems off" into a diagnosis. The quadrant that costs you money is **strong book, low Activation**: the segment's best accounts are parked with someone who isn't touching them. No account count will ever surface that. It's the single most expensive thing a book can be doing, and it's the first thing this app shows you.
+Splitting them turns a vague "seems off" into a diagnosis. The quadrant that costs you money is **strong book, low Activity**: the segment's best accounts are parked with someone who isn't touching them. No account count will ever surface that. It's the single most expensive thing a book can be doing, and it's the first thing this app shows you.
 
 ## Rank within a segment, not globally
 
@@ -71,9 +71,9 @@ The proposals land in a review queue as the app's primary call to action. One dr
 
 The repo ships a runnable demo at [`examples/territory-planning/`](../../../examples/territory-planning) — a fictitious vendor, *Northwind*, with 1,935 accounts and 20 reps (10 Enterprise, 10 Commercial). The data is synthetic, but it's built to show the shapes you'll recognize:
 
-- **Tom Harris** holds the biggest Enterprise book and the strongest one (Kolmogorov-Smirnov distance +0.66 on their top 50, +0.32 on all accounts) — and works almost none of it (12% Activation). The sitting-on-value quadrant, invisible to an account count.
+- **Tom Harris** holds the biggest Enterprise book and the strongest one (Kolmogorov-Smirnov distance +0.66 on their top 50, +0.32 on all accounts) — and works almost none of it (12% Activity across the book). The sitting-on-value quadrant, invisible to an account count.
 - **Marcus Bell** is the other end: an Enterprise book that's weaker than their peers' both ways (Kolmogorov-Smirnov distance −0.24 on top 50, −0.30 on all accounts).
-- **James Walker** is the foil: a smaller book with activity on every account (100% Activation).
+- **James Walker** is the foil: a smaller book with activity on every account (100% Activity).
 - **Grace Mitchell** is a ramping rep with 28 accounts. Their mix looks good by luck (+0.19 on all accounts, greyed as noise), but their top 50 has 22 empty slots (−0.17): a small book is less opportunity.
 - **Alex Morgan** is the commercial star: the biggest book, the most opportunity (Kolmogorov-Smirnov distance +0.62 on top 150), and works it hardest.
 - **Jordan Lee** shows why both readings matter: an average mix (−0.10 on all accounts) but a big book, so their top 150 is stronger than most (+0.16).
@@ -89,7 +89,7 @@ Stock Python 3.10+, no dependencies.
 
 ## Run it on yours
 
-You need a coding agent (**Claude Code**, **OpenAI Codex**, or **Cursor**), your CRM ownership (Salesforce, HubSpot, a warehouse, or a CSV with account, owner, and a size signal), and ideally an existing account-scoring run for the value column. Connect whatever activity sources you have — Google Calendar, Gong, Fireflies, Granola, Salesforce email — and Activation lights up; skip them and you still get balance and segment fit.
+You need a coding agent (**Claude Code**, **OpenAI Codex**, or **Cursor**), your CRM ownership (Salesforce, HubSpot, a warehouse, or a CSV with account, owner, and a size signal), and ideally an existing account-scoring run for the value column. Connect whatever activity sources you have — Google Calendar, Gong, Fireflies, Granola, Salesforce email — and Activity lights up; skip them and you still get balance and segment fit.
 
 ```bash
 npx skills add SumbleData/agents --skill sumble-territory-planning

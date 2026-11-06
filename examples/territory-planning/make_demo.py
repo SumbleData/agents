@@ -321,7 +321,7 @@ def main() -> None:
 
     # ---- activity/meetings.csv ----------------------------------------------
     # Reps work their stronger accounts more; per-rep effort varies so coverage
-    # (Activation) spreads across the team, and a few barely work their books.
+    # (Activity) spreads across the team, and a few barely work their books.
     score_by_crm = {s["crm_account_id"]: s["score"] for s in score_rows}
     rep_effort = {n: 0.28 + 0.5 * h01("effort", n) for n in reps_seg}
     rep_effort["Grace Mitchell"] = 0.03  # ramping enterprise rep - near-idle book

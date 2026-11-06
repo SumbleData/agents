@@ -1,6 +1,6 @@
 ---
 name: sumble-territory-planning
-description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with a book-strength table per segment (signed Kolmogorov-Smirnov distances vs peers on each rep's top N accounts and on all accounts, clickable to the rep's ranked accounts, plus Activation), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
+description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with a book-strength table per segment (signed Kolmogorov-Smirnov distances vs peers on each rep's top N accounts and on all accounts, clickable to the rep's ranked accounts, each with an Activity share), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
 ---
 
 # Territory Planning
@@ -77,7 +77,7 @@ does not replace it.
   question is unanswerable, and a table of 0% states the opposite. One helper,
   `territory_lib.has_activity()` (mirrored by `hasActivityData()` in the UI), is
   the single source of truth. When it is false:
-  - the **Activation** column is removed, replaced by a short note saying why
+  - the two **Activity** columns are removed, replaced by a short note saying why
     (KS is unaffected: it reads ICP score and ownership only);
   - the **not-worked** and **strong-but-idle** flags are removed — with no
     events every owned account trivially satisfies "not worked", so the cards
@@ -691,7 +691,9 @@ Tell them how to work it, in this order:
    one pill per segment) shows every segment's table or just one.
 
    Rows are reps, with their **In-seg** account count, then two
-   Kolmogorov-Smirnov distances and, when activity is loaded, **Activation**.
+   Kolmogorov-Smirnov distances, each followed by its **Activity** column when
+   activity is loaded: distance top N, Activity top N, distance all accounts,
+   Activity all accounts.
    The table sorts by the top-N distance by default. There is deliberately no
    average-rank depth column: an earlier "average segment rank of the top 25"
    column confused RevOps users more than it helped.
@@ -740,11 +742,13 @@ Tell them how to work it, in this order:
      look, above 0.25 is a real difference. `merge_territory.py` prints both
      readings and p-values for every rep; quote the significant outliers in the
      merge summary.
-   - **Activation**. The share of the rep's in-segment accounts with a meeting,
-     call, or outbound email in the activity window (`activity.window_days`,
-     default 90). A plain count: every account counts the same, with no score
-     weighting. Read it next to the distances: a strong book with low
-     Activation is good accounts parked with someone who isn't working them.
+   - **Activity, top N** and **Activity, all accounts**. The share of the rep's
+     top N in-segment accounts by score (or all of them, if they have fewer),
+     and of all their in-segment accounts, with a meeting, call, or outbound
+     email in the activity window (`activity.window_days`, default 90). A plain
+     count: every account counts the same, with no score weighting. Read each
+     next to its distance: a strong top N with low Activity on it is good
+     accounts parked with someone who isn't working them.
 
    Two things make the ranks trustworthy, both learned the hard way:
    - **Rank within a single segment only.** A rep's book mixes segment sizes — a

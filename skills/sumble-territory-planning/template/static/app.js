@@ -40,7 +40,7 @@ const state = {
 };
 
 const PAGE_DESCRIPTIONS = {
-  overview: "Whether each rep's book is as strong as their peers' (Kolmogorov-Smirnov distance) — plus what needs attention. Click a distance to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, Activation is the share of their accounts touched in the activity window.",
+  overview: "Whether each rep's book is as strong as their peers' (Kolmogorov-Smirnov distance) — plus what needs attention. Click a distance to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, Activity is the share of their accounts touched in the activity window, on their top N and on all accounts.",
   accounts: "Every account. Assign any account to anyone with the dropdown in the last column — the Overview books update as you go. Filter by a flag, a rep, a segment, or the balancer's suggested moves (accept/reject inline). Click a row for its activity detail.",
   export: "Download the approved changes for your CRM, or the full sheet with every flag and activity count.",
 };
@@ -83,9 +83,9 @@ function isWhitespace(r) {
  *
  *  Mirrors territory_lib.has_activity() so the UI and the move engine agree.
  *  When false, every activity-derived surface is REMOVED rather than shown as
- *  zero: the Activation column, the not-worked and strong-idle flags, and the
+ *  zero: the Activity columns, the not-worked and strong-idle flags, and the
  *  whole suggested-moves queue. Zero events means "we cannot tell", and a 0%
- *  Activation column states the opposite.
+ *  Activity column states the opposite.
  *  Memoised — it is read on every render and scans every row. */
 let _hasActivity = null;
 function hasActivityData() {
@@ -379,7 +379,7 @@ function wireMovesCta(root) {
 }
 
 /** The Overview is one book-strength table per segment (two
- *  Kolmogorov-Smirnov distances + Activation per rep, coloured by column)
+ *  Kolmogorov-Smirnov distances + Activity per rep, coloured by column)
  *  followed by the "needs attention" flag cards. */
 function renderOverview() {
   const { sizes } = segmentRanks();
@@ -390,8 +390,8 @@ function renderOverview() {
     "opportunity as their peers? N is set per segment in the sidebar) and on " +
     "<strong>all accounts</strong> (is their mix as strong?). 0 = even, + = stronger, " +
     "− = weaker; <strong>click a distance</strong> to see their accounts ranked. " +
-    "<strong>Activation</strong> is the share of their accounts with a meeting, call or " +
-    "email in the activity window. <strong>Click any header to sort</strong>; click a rep " +
+    "<strong>Activity</strong> is the share of their accounts (top N, and all) with a " +
+    "meeting, call or email in the activity window. <strong>Click any header to sort</strong>; click a rep " +
     "to open their accounts. Hover any ⓘ for the detail.</p>",
   ];
 
@@ -415,7 +415,7 @@ function renderOverview() {
   }
 
   const windowDays = fmt(state.plan.activity?.window_days || 90);
-  // Activation is ENTIRELY activity-derived. With no events loaded it would
+  // Activity is ENTIRELY activity-derived. With no events loaded it would
   // read 0% for every rep, indistinguishable from a team working nothing, so
   // the column is dropped and a note says why.
   const hasAct = hasActivityData();
@@ -448,15 +448,28 @@ function renderOverview() {
       return k.n_peers ? { v: k.ks, muted: k.p >= KS_SIGNIFICANCE } : null;
     },
   });
-  const activationMetric = {
-    key: "activation", label: "Activation", better: "high", fmt: (v) => `${fmt(v, 0)}%`,
-    help: `What share of this rep's accounts in this segment had a meeting, call, or ` +
-      `outbound email in the last ${windowDays} days?\n\nA plain count: every account ` +
-      `counts the same. Nobody works a whole book, so 100% is rare. A strong book ` +
-      `(positive distance) with low Activation is the expensive combination: good ` +
-      `accounts parked with someone who isn't working them.`,
-    value: (book) => (book.length ? { v: workedPctOf(book) } : null),
-  };
+  // Activity: the share of accounts with a meeting, call or email in the
+  // window. Read on the rep's top N by score (the accounts that matter most)
+  // and on their whole in-segment book.
+  const activityMetric = (mode, n) => ({
+    key: mode === "top" ? "act_top" : "act_all",
+    label: mode === "top" ? `Activity, top ${fmt(n)}` : "Activity, all accounts",
+    better: "high", fmt: (v) => `${fmt(v, 0)}%`,
+    help: (mode === "top"
+      ? `Of this rep's top ${fmt(n)} accounts by score (or all of them, if they have ` +
+        `fewer), what share had a meeting, call, or outbound email in the last ` +
+        `${windowDays} days?`
+      : `Of every account this rep owns in this segment, what share had a meeting, ` +
+        `call, or outbound email in the last ${windowDays} days?`) +
+      `\n\nA plain count: every account counts the same. A strong book with low ` +
+      `Activity is the expensive combination: good accounts parked with someone ` +
+      `who isn't working them.`,
+    value: (book) => {
+      const slice = mode === "top"
+        ? [...book].sort((a, b) => num(b.score) - num(a.score)).slice(0, n) : book;
+      return slice.length ? { v: workedPctOf(slice) } : null;
+    },
+  });
 
   // One table per segment: a rep is only ever compared with their own
   // segment's peers, so the rows never share a scale across segments.
@@ -473,13 +486,14 @@ function renderOverview() {
       `<h3 class="terr-h3">${esc(seg.label)} <span class="terr-sub">` +
       `${fmt(grp.books.length)} reps · ranked within ${fmt(grp.size)} accounts</span></h3>`);
     parts.push(renderMatrix(grp, [
-      ksMetric("top", n), ksMetric("all", n), ...(hasAct ? [activationMetric] : []),
+      ksMetric("top", n), ...(hasAct ? [activityMetric("top", n)] : []),
+      ksMetric("all", n), ...(hasAct ? [activityMetric("all", n)] : []),
     ], state.overviewSort.strength));
   }
   if (!hasAct && shown.length) {
     parts.push(
-      `<div class="terr-note">No activity data loaded, so Activation cannot be ` +
-      `measured. The Activation column and the worked-based flags are hidden ` +
+      `<div class="terr-note">No activity data loaded, so Activity cannot be ` +
+      `measured. The Activity columns and the worked-based flags are hidden ` +
       `rather than shown as zero. The Kolmogorov-Smirnov distances are unaffected: ` +
       `they come from account score and ownership only.</div>`);
   }
@@ -861,7 +875,7 @@ function renderMatrix(grp, metrics, sort) {
     { label: "In-seg", key: "inseg" },
     ...metrics,
   ];
-  // A sort key can outlive its column (e.g. Activation with no activity
+  // A sort key can outlive its column (e.g. Activity with no activity
   // loaded); fall back to the first metric rather than sorting on nothing.
   if (!columns.some((c) => c.key === sort.key)) {
     sort.key = metrics[0]?.key || "rep";

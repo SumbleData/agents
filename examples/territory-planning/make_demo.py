@@ -34,27 +34,27 @@ SEGMENT_CAPACITY = {"commercial": 150, "enterprise": 50}
 
 ENTERPRISE_REPS = [
     "Avery Brooks",
-    "Chen Wei",
-    "Fatima Khan",
+    "Tom Harris",
+    "Emily Clarke",
     "Marcus Bell",
-    "Sofia Romano",
-    "Dev Ramesh",
-    "Grace Okafor",
-    "Liam Novak",
-    "Yuki Tanaka",
-    "Rosa Alvarez",
+    "Sophie Turner",
+    "James Walker",
+    "Grace Mitchell",
+    "Liam Foster",
+    "Hannah Wright",
+    "Rachel Evans",
 ]
 COMMERCIAL_REPS = [
-    "Alex Rivera",
+    "Alex Morgan",
     "Jordan Lee",
-    "Sam Patel",
-    "Priya Nair",
-    "Diego Castro",
-    "Maya Cohen",
-    "Noah Schmidt",
-    "Aisha Bello",
-    "Ravi Menon",
-    "Elena Petrova",
+    "Sam Cooper",
+    "Kate Bennett",
+    "Dan Hughes",
+    "Megan Price",
+    "Noah Phillips",
+    "Charlotte Reid",
+    "Ryan Collins",
+    "Ellie Ward",
 ]
 
 
@@ -117,33 +117,33 @@ def main() -> None:
     # where the tail reps ended up at a third of target. The spread within the
     # band is what gives the heatmaps something to show.
     ENT_QUOTA = {
-        "Chen Wei": 66,       # biggest book in the segment - and barely worked
-        "Dev Ramesh": 47,
+        "Tom Harris": 66,       # biggest book in the segment - and barely worked
+        "James Walker": 47,
         "Avery Brooks": 43,
-        "Sofia Romano": 40,
+        "Sophie Turner": 40,
         "Marcus Bell": 38,
-        "Fatima Khan": 36,
-        "Yuki Tanaka": 34,
-        "Liam Novak": 32,
-        "Rosa Alvarez": 31,
-        "Grace Okafor": 30,   # ramping - at the floor of the band
+        "Emily Clarke": 36,
+        "Hannah Wright": 34,
+        "Liam Foster": 32,
+        "Rachel Evans": 31,
+        "Grace Mitchell": 30,   # ramping - at the floor of the band
     }
     COM_QUOTA = {
-        "Alex Rivera": 180,   # the star: biggest book, and the best worked
+        "Alex Morgan": 180,   # the star: biggest book, and the best worked
         "Jordan Lee": 128,
-        "Sam Patel": 116,
-        "Priya Nair": 108,
-        "Diego Castro": 100,
-        "Maya Cohen": 96,
-        "Noah Schmidt": 92,
-        "Aisha Bello": 92,
-        "Ravi Menon": 91,
-        "Elena Petrova": 90,  # near the floor
+        "Sam Cooper": 116,
+        "Kate Bennett": 108,
+        "Dan Hughes": 100,
+        "Megan Price": 96,
+        "Noah Phillips": 92,
+        "Charlotte Reid": 92,
+        "Ryan Collins": 91,
+        "Ellie Ward": 90,  # near the floor
     }
     # Books are filled strongest-account-first, so a bias > 1 pulls the segment's
-    # best accounts onto that rep. This is what separates Capture (share of the
-    # best business) from raw book size — without it the two say the same thing.
-    STAR_BIAS = {"Chen Wei": 2.0, "Alex Rivera": 2.0, "Dev Ramesh": 1.3}
+    # best accounts onto that rep. This is what separates book strength (the KS
+    # column) from raw book size — without it the two say the same thing.
+    STAR_BIAS = {"Tom Harris": 2.0, "Alex Morgan": 2.0, "James Walker": 1.3}
 
     MISFIT_RATE = 0.04  # owned accounts handed to a rep in the OTHER segment
     KEEP_PROB = {"enterprise": 0.94, "commercial": 0.80}
@@ -174,8 +174,8 @@ def main() -> None:
     # Each account goes to a rep drawn in proportion to their REMAINING quota
     # (times their star bias) — a lottery, not "whoever has most quota left",
     # which would hand the biggest book the entire top of the segment in one
-    # block and leave every other rep at ~0% Capture. Proportional draw means a
-    # rep's share of every score band tracks their book size, and the bias is
+    # block and leave every other rep with a uniformly weak book. Proportional
+    # draw means a rep's share of every score band tracks their book size, and the bias is
     # what tilts the best accounts onto the stars. Quotas are met exactly;
     # whatever the reps don't take (the weakest of the pool) stays unallocated.
     owner_of: dict[str, str] = {}
@@ -242,7 +242,7 @@ def main() -> None:
     dupes = [
         r for r in own_rows if r["owner"] and reps_seg.get(r["owner"]) == "enterprise"
     ][:3]
-    extra_owner = {0: "Marcus Bell", 1: "Sofia Romano", 2: "Chen Wei"}
+    extra_owner = {0: "Marcus Bell", 1: "Sophie Turner", 2: "Tom Harris"}
     for i, base in enumerate(dupes):
         if base["owner"] == extra_owner[i]:
             continue
@@ -324,10 +324,10 @@ def main() -> None:
     # (Activation) spreads across the team, and a few barely work their books.
     score_by_crm = {s["crm_account_id"]: s["score"] for s in score_rows}
     rep_effort = {n: 0.28 + 0.5 * h01("effort", n) for n in reps_seg}
-    rep_effort["Grace Okafor"] = 0.03  # ramping enterprise rep - near-idle book
-    rep_effort["Chen Wei"] = 0.10  # big book, barely worked (sitting on value)
-    rep_effort["Alex Rivera"] = 0.80  # star commercial rep - high activation
-    rep_effort["Dev Ramesh"] = 0.92  # works his whole top tier - Chen Wei's foil
+    rep_effort["Grace Mitchell"] = 0.03  # ramping enterprise rep - near-idle book
+    rep_effort["Tom Harris"] = 0.10  # big book, barely worked (sitting on value)
+    rep_effort["Alex Morgan"] = 0.80  # star commercial rep - high activation
+    rep_effort["James Walker"] = 0.92  # works their whole top tier - Tom Harris's foil
     events = []
     for o in own_rows:
         if not o["owner"]:
@@ -386,6 +386,9 @@ def main() -> None:
         },
         "activity": {
             "window_days": 90,
+            # The synthetic meetings run June-July 2026; pin the window to them so
+            # a rebuild on any later date still sees the activity.
+            "as_of": "2026-07-31",
             "sources": ["google_calendar"],
             "company_domain": COMPANY_DOMAIN,
         },

@@ -1,6 +1,6 @@
 ---
 name: sumble-territory-planning
-description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial) and whether the segment line is a hard rule or should be calibrated from their data, pulls territory ownership from the CRM, and pulls per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a self-contained, zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (Capture plus each rep's top 25 accounts by average in-segment rank, and a matching coverage table), a granular account view, highlights for accounts that are not being worked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle (with a live top-N strong-account cutoff), and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
+description: "Companion to sumble-account-scoring: plan and rebalance sales territories. Interviews the user about their segments (default Enterprise + Commercial), what decides an account's segment (account score, headcount, revenue, or another CRM field), and whether that line is a hard rule or calibrated from their data. Pulls territory ownership from the CRM and per-rep×account activity (calendar meetings, Gong/Fireflies/Granola calls, Salesforce email) from whatever MCPs are connected. Generates a zero-dependency Python + HTML/JS app at territory_planning/{company}/ with per-segment book-strength heatmaps (a signed Kolmogorov-Smirnov distance between each rep's book and their peers', clickable to the rep's ranked accounts, plus a coverage table), an account view, flags for accounts that are unworked / in the wrong segment / strong-but-unallocated / double-allocated / strong-but-idle, and a suggest→accept/reject→export flow that writes an actions.csv of approved owner changes."
 ---
 
 # Territory Planning
@@ -337,41 +337,69 @@ Record as `spec.score_source`: `{"kind": "custom", "path": "…/score.csv"}` or
 
 ---
 
-**2. Segments.**
+**2. Segments, and what decides them.**
 
-"What sales segments do you have?" **Propose Enterprise + Commercial as the
-default** — don't make them invent it. They may rename, add (SMB, Mid-Market,
+Ask both halves in ONE message.
+
+**(a) What segments do you sell in?** Propose **Enterprise + Commercial** as the
+default; don't make them invent it. They may rename, add (SMB, Mid-Market,
 Strategic), or drop to two. Store ordered **smallest → largest** via `order`.
+
+**(b) What decides which segment an account belongs to?** Offer these options
+and record the answer as `boundary.metric`:
+
+| Option | `metric` | Where the value comes from |
+|---|---|---|
+| **Account score**: the best-fit accounts go to the top segment | `score` | The account-scoring `score.csv` (Path A) or `sumble_score` (Path B). Nothing extra to fetch. |
+| **Headcount (total employees)** | `total_employees` | Sumble. Already in `score.csv`; Path B fetches it. |
+| **Headcount in one job function** (e.g. Engineering, Sales) | `jf_people:{Function}` | Sumble. See the job-function rules in Q3b. |
+| **Revenue** | `revenue` | **The CRM, not Sumble** (Sumble has no revenue data). Salesforce `Account.AnnualRevenue`, HubSpot `annualrevenue`. Pull it into a `revenue` column of `ownership.csv` in Q4. |
+| **Another numeric CRM field** (a tier score, ARR, seat count) | `crm:{column}` | A column of that name in `ownership.csv`. |
+| **A column already in `score.csv`** | `custom:{column}` | That column verbatim. |
+
+The interactive question widget only fits four options, so offer the first four
+(score, total employees, job-function headcount, revenue) and let "Other" cover
+the CRM field and `score.csv` column cases.
+
+Say the consequence of each choice in one line when it matters:
+- **Score** makes the top segment "the accounts that fit best", not "the
+  biggest". That's a real strategy (put the strongest reps on the best-fit
+  accounts), but it means a small company with a perfect fit lands in
+  Enterprise. Confirm that's what they mean.
+- **Revenue** and other CRM fields only exist for accounts the CRM already has.
+  Whitespace and accounts with a blank field read 0 and land in the smallest
+  segment; `calibrate_split.py` warns when that's more than 20% of accounts.
+- **A categorical CRM field** ("the Segment__c picklist decides it") is not
+  supported as a boundary. Say so, and offer the numeric field that picklist was
+  set from, or a hard line on one of the metrics above.
+
+Record a display label alongside (`boundary.label`, e.g. `"Annual revenue
+(USD)"`); `build_plan.py` fills a sensible default when it's blank.
 
 ---
 
-**3. The segment boundary — branching.**
+**3. Where the line sits.**
 
-Ask ONE question: *"Do you have a hard-line rule that splits these segments, or
-should I calibrate one from your data?"*
+Ask ONE question: *"Do you have a hard-line rule for where {metric} splits
+these segments, or should I calibrate one from your data?"*
 
-**3a — They have a hard line.** Ask for it verbatim and capture the metric plus
-the threshold(s), e.g. "Enterprise is 1,000+ employees". The metric may be:
-- total employee count → `"metric": "total_employees"`
-- headcount in a job function → `"metric": "jf_people:{Function Name}"`
-- a column they supply by CSV → `"metric": "custom:{column}"`
+**3a. They have a hard line.** Ask for it verbatim and capture the threshold(s),
+e.g. "Enterprise is 1,000+ employees", "Enterprise is $500M+ revenue",
+"Enterprise is a score of 70+". Store each as `{segment, min}`, inclusive.
 
-If they name something Sumble cannot supply (revenue, ARR, a named account
-list), say so and offer: supply it as a CSV column, or fall back to employee
-count. Do not silently substitute.
+**3b. Calibrate it.** If they picked a headcount metric in Q2 and aren't sure
+which, propose exactly TWO candidates and let them pick:
 
-**3b — Calibrate it.** Propose exactly TWO candidate metrics and let them pick:
-
-1. **Total employee count** — the safe default.
-2. **Headcount under their ICP job function** — often the better line, because
+1. **Total employee count**, the safe default.
+2. **Headcount under their ICP job function.** Often the better line, because
    it sizes the *buying centre* rather than the company. Read the key persona
    from the account-scoring config (or ask), then **snap UP to a broad,
    top-level parent job function** and suggest that.
 
    > **Never suggest a granular child function.** "DevOps Engineer" or "SRE"
    > reads zero at most companies below a few thousand people, so the "boundary"
-   > ends up sorting on whether Sumble has data, not on size. A broad parent —
-   > `Engineer`, `Sales`, `Marketing` — is dense enough to size anyone. It will
+   > ends up sorting on whether Sumble has data, not on size. A broad parent
+   > (`Engineer`, `Sales`, `Marketing`) is dense enough to size anyone. It will
    > sweep in adjacent roles (an electrical engineer lands under `Engineer`);
    > that is the correct trade, because density is what makes the line hold.
    >
@@ -379,24 +407,37 @@ count. Do not silently substitute.
    > For **Datadog** (sells to engineering) suggest **`Engineer`**. Not "Account
    > Executive", not "DevOps Engineer".
 
-   Resolve the display name with `lookup.py --titles "{name}"` before using it —
-   the endpoint takes the canonical **display name**, and a wrong one 400s with
+   Resolve the display name with `lookup.py --titles "{name}"` before using it.
+   The endpoint takes the canonical **display name**, and a wrong one 400s with
    a "did you mean" list.
 
    On Path A, if the scoring run never fetched that function, pull just that one
    metric with `fetch_light.py --from-score … --only-jf "{Name}"`.
 
+For score, revenue and CRM fields there is no candidate to choose; calibrate
+the metric they named.
+
 Then run `calibrate_split.py` and present the result. It picks its own method:
 **supervised** (two segments and the reps' segments are already known) sweeps
 thresholds and picks the one leaving the fewest reps working out-of-segment
-accounts — the reps' actual behaviour defines the line; **k-means on log(size)**
-otherwise. Either way the answer is snapped to a round, defensible number.
+accounts, so the reps' actual behaviour defines the line; **k-means**
+otherwise (on log(size) for headcount and revenue, on the raw value for a
+score). Either way the answer is snapped to a round number: 500 / 1,000 / 2,500
+employees, $10M / $25M / $50M revenue, a multiple of 5 on a score.
 
-**Print the whole proposal in the message** — the method and why, the size
+**Print the whole proposal in the message**: the method and why, the
 distribution (p10/median/p90), the proposed line, how many accounts land in each
-segment, and any warning. **Always surface the density warning if it fires**
-(">30% of accounts below the line read zero on this metric") and offer the
-broader function or total employees instead. Then confirm.
+segment, and any warning. **Always surface a warning if one fires**, and act on
+it:
+- the density warning (">30% of accounts below the line read zero on this
+  metric"): offer the broader function or total employees instead;
+- the missing-values warning (>20% of accounts have no value): usually a
+  revenue or CRM field that is blank for whitespace and new accounts;
+- the empty-segment warning (the line puts no accounts in a segment): the
+  metric does not separate how the reps' books are split today. Ask for a hard
+  line or offer a different metric.
+
+Then confirm.
 
 ---
 
@@ -411,7 +452,11 @@ list tables → hypothesise the source (Salesforce `Account` with
 `dim_accounts.account_owner`) → **confirm in one prompt** → sample-read
 `LIMIT 10` and verify the join keys (account name, domain/website) → full pull.
 
-Ask two things while you're there:
+Ask these while you're there:
+- If the boundary metric is **revenue** or another **CRM field** (Q2), pull it
+  into `ownership.csv` as a column named `revenue` (or the `crm:{column}`
+  name). Sample it in the `LIMIT 10` read: a field that's blank on most rows is
+  a bad boundary, and it's cheaper to find out now.
 - Does the source encode **which segment each rep sells** (a role, team, or
   user-type field)? If yes, use it and skip the guessing in Q5.
 - Does it mark **customers / closed-won**? Customers are excluded from balance,
@@ -542,7 +587,8 @@ Write these into `{output_root}/_raw/` with your file tools:
     "strong_cutoff": 500
   }
   ```
-- **`ownership.csv`** — `crm_account_id,name,domain,owner,owner_email,owner_is_queue,is_customer`
+- **`ownership.csv`** — `crm_account_id,name,domain,owner,owner_email,owner_is_queue,is_customer`,
+  plus a `revenue` (or `crm:{column}`) column when that is the boundary metric
 - **`reps.csv`** — `name,email,segment,is_rep,capacity,in_balance`
   - `capacity` — blank inherits the segment's `default_capacity`; set it only
     for a genuine exception.
@@ -569,8 +615,8 @@ python3 {skill_dir}/template/_build/suggest_moves.py --dir {output_root}
 ```
 
 **Surface the merge summary to the user** — allocated / unallocated /
-double-allocated / misfit / not-worked / strong-idle counts, and the per-segment
-CV. That summary IS the finding; don't let it scroll past silently. Call out
+double-allocated / misfit / not-worked / strong-idle counts, the per-segment
+CV, and any rep whose KS is significant (no "within noise" tag). That summary IS the finding; don't let it scroll past silently. Call out
 these three explicitly if they fire:
 - ownership rows that matched no org (unmatched by Sumble, or outside the scored set),
 - **no activity events found at all** — the coverage numbers are then meaningless;
@@ -640,36 +686,48 @@ Tell them how to work it, in this order:
    segment) narrows the rows — every rep by default, or one segment's when
    filtered. With `All segments`, a **Segment column** labels each row.
 
-   Rows are reps. Each table leads with its summary metric (below), then a single
-   **Top 25** depth column: the **average rank** of the rep's 25 strongest accounts
-   *within that segment* (1 = best) in the strength table, and the **share of those
-   25 worked** in the coverage table. Coverage adds a **Whole book** column (share
-   of everything they own that's been touched); strength does not — an average rank
-   over a whole book is dragged around by book size and invites a cross-rep
-   comparison it can't support. Keep it at one band: the earlier
-   10/25/50/100/200 ladder asked a reviewer to hold five numbers per rep in their
-   head and read a trend across them, and RevOps users read it as noise. The top 25
-   is the tier a rep actually works.
+   Rows are reps, with their **In-seg** account count. The strength table has one
+   metric column, **KS**; the coverage table has **Activation** plus **Whole
+   book** (share of everything they own in the segment that's been touched).
+   There is deliberately no top-N depth column: an earlier "average segment rank
+   of the top 25" column confused RevOps users more than it helped, and KS
+   already reads the whole book. The ranked accounts are one click away on the
+   KS value instead.
 
-   Conditional formatting shades **green (strong) → pale (weak) down each whole
-   column** (across all rows shown, both segments); a cell is blank when the rep
-   owns fewer than 25 accounts *in that segment*. **Every header sorts** — click to
+   Conditional formatting shades each column across all rows shown (both
+   segments). **Every header sorts** — click to
    sort, click again to flip. Below both tables sits the **suggested-moves CTA**
    (see 3) and then the "also worth a look" flag cards.
 
-   Each matrix leads with a **summary column** — the headline metric, and the
-   default sort (descending). Both are weighted to the segment's best accounts, and
-   the header carries a plain-language tooltip:
-   - **Capture** (strength table, default sort) — the rep's share of the segment's
-     *top-tier* account value, where a top-decile account (by score) counts double a
-     top-quartile one and everything below the quartile counts zero. "Holds a lot of
-     the best value" vs "holds a big pile of weak accounts."
-   - **Activation** (coverage table, default sort) — of that top-tier value the rep
-     *holds*, the share they're actually working. Book-size-independent (denominator
-     is their own holdings), so `0%` is a rep sitting on strong accounts — the
-     clearest read on a player-coach.
-   The top-decile multiplier is the `tier_decile_weight` knob in `territory-plan.json`
-   (default 2).
+   Each matrix leads with a **summary column**, the headline metric and the
+   default sort (descending), with a plain-language tooltip on the header:
+   - **KS** (strength table, default sort). The signed two-sample
+     Kolmogorov-Smirnov distance between the scores of the rep's in-segment
+     accounts and the pooled scores of every other rep in the segment: the
+     widest gap between the two cumulative distributions. `0` = the same mix of
+     strong and weak accounts as their peers, `+` = skews stronger, `−` =
+     weaker, `±1` = no overlap. It compares the **mix, not the size** (book size
+     is the In-seg column), so a rep with 30 accounts and one with 300 can both
+     read 0. Green for positive, amber for negative, deeper further from 0.
+     Readings with p ≥ 0.05 are greyed and unshaded: a small book can look
+     different by chance. Player-coaches (`in_balance=0`) get a reading but are
+     never part of anyone else's peer pool.
+
+     **Clicking a KS value opens the rep's ranking** in the side panel: their
+     in-segment accounts strongest first with segment rank, score and worked
+     status, and a chart of the share of each book scoring at least each score
+     (this rep vs peers) with the widest gap marked. That gap is the KS number.
+     Clicking the rep's name still jumps to the Accounts tab.
+
+     Rough reading guide for users: under 0.1 is even, 0.1–0.25 is worth a
+     look, above 0.25 is a real difference. `merge_territory.py` prints every
+     rep's KS and p-value; quote the significant outliers in the merge summary.
+   - **Activation** (coverage table, default sort). Of the segment's top-tier
+     value the rep *holds* (a top-decile account by score counts double, the
+     rest of the top quartile once, everything below zero), the share they're
+     actually working. Book-size-independent, so `0%` is a rep sitting on strong
+     accounts, the clearest read on a player-coach. The top-decile multiplier is
+     the `tier_decile_weight` knob in `territory-plan.json` (default 2).
 
    Two things make the ranks trustworthy, both learned the hard way:
    - **Rank within a single segment only.** A rep's book mixes segment sizes — a

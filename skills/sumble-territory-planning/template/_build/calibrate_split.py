@@ -17,10 +17,11 @@ Two ways to find the boundary, picked automatically:
   company sizes are log-distributed, so clustering in log space finds the gap
   where the market actually splits rather than being dragged by one huge
   account. Thresholds sit at the geometric midpoint between adjacent cluster
-  centres.
+  centres. When the boundary metric is the account score itself, clustering
+  runs on the raw score instead, since scores are not log-distributed.
 
 Either way the result is snapped to a round, defensible number (500, 1,000,
-2,500…): the precision a 40-account sample supports is not "1,043 employees".
+2,500… employees; $10M, $25M… revenue; a multiple of 5 on a score): the precision a 40-account sample supports is not "1,043 employees".
 
 Also runs the DENSITY GUARD. When the boundary metric is a job-function
 headcount, a function that is too granular reads zero at most small companies —
@@ -73,7 +74,8 @@ def load_accounts(raw: Path, spec: dict) -> tuple[list[dict], str, str]:
         label = "sumble_light.csv"
     if not rows:
         sys.exit(f"[calibrate] no rows in {path}")
-    size_col = tl.resolve_size_column(spec, rows[0].keys())
+    ownership = tl.read_csv(raw / "ownership.csv")
+    size_col = tl.prepare_boundary_metric(spec, rows, ownership)
     if size_col not in rows[0]:
         sys.exit(
             f"[calibrate] boundary column '{size_col}' is not in {path.name} "
@@ -137,8 +139,8 @@ def supervised_threshold(pairs: list[tuple[float, str]], big_key: str) -> tuple[
 
 
 def snap_supervised(
-    raw_threshold: float, pairs: list[tuple[float, str]], big_key: str
-) -> tuple[int, int]:
+    raw_threshold: float, pairs: list[tuple[float, str]], big_key: str, metric: str
+) -> tuple[float | int, int]:
     """Round the boundary to a defensible number WITHOUT making the fit worse.
 
     Snapping to the nearest round number can move accounts across the line: an
@@ -150,12 +152,13 @@ def snap_supervised(
 
     Returns (threshold, misfit_count).
     """
-    best = tl.snap_to_human(raw_threshold)
+    best = tl.snap_to_human(raw_threshold, metric)
     best_err = _misfits_at(pairs, best, big_key)
-    for cand in tl.HUMAN_THRESHOLDS:
+    sizes = [p[0] for p in pairs]
+    for cand in tl.human_candidates(metric, min(sizes), max(sizes)):
         err = _misfits_at(pairs, cand, big_key)
-        closer = abs(math.log(max(cand, 1) / max(raw_threshold, 1))) < abs(
-            math.log(max(best, 1) / max(raw_threshold, 1))
+        closer = tl.snap_distance(metric, raw_threshold, cand) < tl.snap_distance(
+            metric, raw_threshold, best
         )
         if err < best_err or (err == best_err and closer):
             best, best_err = cand, err
@@ -175,6 +178,8 @@ def main() -> None:
 
     rows, size_col, source_label = load_accounts(raw, spec)
     ownership = tl.read_csv(raw / "ownership.csv")
+    metric = str((spec.get("boundary") or {}).get("metric") or "total_employees")
+    log_scaled = tl.is_log_scaled(metric)
     reps = tl.read_csv(raw / "reps.csv")
 
     # domain -> size, for joining ownership to size
@@ -213,7 +218,7 @@ def main() -> None:
     if use_supervised:
         method = "supervised"
         rawthr, _ = supervised_threshold(owned_pairs, big_key)
-        snapped_thr, misfits = snap_supervised(rawthr, owned_pairs, big_key)
+        snapped_thr, misfits = snap_supervised(rawthr, owned_pairs, big_key, metric)
         thresholds_raw = [rawthr]
         snapped_override = [snapped_thr]
         method_note = (
@@ -223,22 +228,26 @@ def main() -> None:
         )
     else:
         method = "kmeans"
-        logs = [math.log1p(max(s, 0.0)) for s in positive] or [0.0]
-        centres = kmeans_1d(logs, len(segments))
+        # Sizes cluster in log space; a score does not, so it clusters as-is.
+        fwd = (lambda v: math.log1p(max(v, 0.0))) if log_scaled else (lambda v: v)
+        inv = math.expm1 if log_scaled else (lambda v: v)
+        centres = kmeans_1d([fwd(s) for s in positive] or [0.0], len(segments))
         thresholds_raw = [
-            math.expm1((centres[i] + centres[i + 1]) / 2.0) for i in range(len(centres) - 1)
+            inv((centres[i] + centres[i + 1]) / 2.0) for i in range(len(centres) - 1)
         ]
         why = (
             "rep segments are not known yet"
             if len(segments) == 2
             else f"{len(segments)} segments (the sweep only handles a two-way split)"
         )
-        method_note = f"1-D k-means on log(size) over {len(positive):,} accounts — {why}"
+        scale = "log(size)" if log_scaled else "score"
+        method_note = f"1-D k-means on {scale} over {len(positive):,} accounts — {why}"
         snapped_override = None
 
     # Supervised snapping is misfit-aware (see snap_supervised); unsupervised
     # has no error signal to optimise, so nearest-round-number is the best rule.
-    snapped = snapped_override or [tl.snap_to_human(t) for t in thresholds_raw]
+    snapped = snapped_override or [tl.snap_to_human(t, metric) for t in thresholds_raw]
+    snapped = [int(t) if float(t).is_integer() else t for t in snapped]
     # Highest threshold → largest segment, working down.
     thresholds = [
         {"segment": seg_keys[i + 1], "min": snapped[i]} for i in range(len(snapped))
@@ -250,7 +259,6 @@ def main() -> None:
     below = [s for s in sizes if s < lowest_line]
     zero_below = sum(1 for s in below if s <= 0)
     zero_frac = (zero_below / len(below)) if below else 0.0
-    metric = str((spec.get("boundary") or {}).get("metric") or "total_employees")
     warnings: list[str] = []
     if metric.startswith("jf_people:") and zero_frac > tl.MAX_ZERO_FRACTION_BELOW:
         warnings.append(
@@ -267,6 +275,20 @@ def main() -> None:
             "have no value for the boundary metric and will all land in the smallest "
             "segment."
         )
+
+    # A line that empties a segment usually means the metric doesn't separate
+    # the reps' books at all (the sweep's best answer was "no line").
+    for seg in segments:
+        n_seg = sum(
+            1 for v in sizes
+            if tl.segment_for_size(v, boundary_preview, segments) == seg["key"]
+        )
+        if n_seg == 0:
+            warnings.append(
+                f"The proposed line puts NO accounts in '{seg.get('label') or seg['key']}'. "
+                f"'{metric}' does not separate how the reps' books are split today. "
+                "Ask for a hard-line threshold, or offer a different metric."
+            )
 
     # --- per-rep segment guess --------------------------------------------
     by_rep: dict[str, list[float]] = {}

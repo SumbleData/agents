@@ -60,6 +60,7 @@ of `territory_lib.py`, not in the agent's judgment.
     "thresholds": [{"segment": "enterprise", "min": 1000}]
   },
   "activity": {"window_days": 90,
+               "as_of": null,
                "sources": ["google_calendar", "fireflies", "salesforce_email"],
                "company_domain": "acme.com"},
   "balance_categories": ["allocated", "unallocated"],
@@ -70,11 +71,14 @@ of `territory_lib.py`, not in the agent's judgment.
 `score_source.kind` is `custom` (an account-scoring `score.csv`, read from
 `path`) or `sumble` (read `_raw/sumble_light.csv`).
 
-### `boundary.metric` — three forms
+### `boundary.metric` forms
 
 | Form | Column resolved to | Notes |
 |---|---|---|
 | `total_employees` | `employee_count_int` | the safe default |
+| `score` | `score`, else `sumble_score` | segments by fit, not size: the best-scoring accounts go to the top segment |
+| `revenue` | `crm_metric`, filled from `ownership.csv`'s `revenue` column | Sumble has no revenue; it comes from the CRM. Shorthand for `crm:revenue` |
+| `crm:<column>` | `crm_metric`, filled from that `ownership.csv` column | any numeric CRM field; matched to accounts by CRM id, then domain, then name, largest value wins |
 | `jf_people:<Display Name>` | `jf_people`, else `<slug>_people` | must be a **broad parent** function (`Engineer`, `Sales`), never a granular child — see the density guard |
 | `custom:<column>` | that column verbatim | a value the user supplied by CSV |
 
@@ -116,9 +120,13 @@ to the lowest-`order` segment.
   too granular: it is sorting on whether Sumble has data, not on company size.
   `calibrate_split.py` emits a warning telling the agent to offer a broader
   parent function or total employee count.
-- **`HUMAN_THRESHOLDS`** — `50 … 50,000`. Boundaries snap to these so the rule
-  is one a sales leader can state out loud. A 40-account sample does not support
-  "1,043 employees".
+- **Round thresholds** — boundaries snap to the 1 / 2.5 / 5 ladder at any power
+  of ten (`HUMAN_THRESHOLDS` is the 50…50,000 slice of it; revenue gets $10M,
+  $25M, $50M…), or to a multiple of 5 on a score, so the rule is one a sales
+  leader can state out loud. A 40-account sample does not support "1,043
+  employees".
+- **`KS_SIGNIFICANCE = 0.05`** — a rep's KS reading with a higher p-value is
+  shown greyed in the app and tagged "within noise" in the merge output.
 - **`FREEMAIL_DOMAINS`** — dropped before activity matching, along with the
   seller's own domain, so internal meetings and personal mail never mark an
   account "worked".
@@ -134,7 +142,9 @@ to the lowest-`order` segment.
   owned accounts match. Sweeps every observed size and picks the threshold
   leaving the fewest accounts owned by a rep from the other segment. *The reps'
   actual behaviour defines the line.*
-- **k-means on log(size)** — otherwise (segments unknown, or >2 segments).
+- **k-means on log(size)** — otherwise (segments unknown, or >2 segments). A
+  `score` boundary clusters on the raw score instead, since scores are not
+  log-distributed.
   Company sizes are log-distributed, so clustering in log space finds the real
   market gap instead of being dragged by one huge account. Deterministic seeding
   at evenly spaced quantiles; thresholds sit at the geometric midpoint between
@@ -145,6 +155,23 @@ to the lowest-`order` segment.
 each round candidate is scored on the same misfit count the sweep used and the
 best one wins, ties broken by closeness to the optimum. The unsupervised path has
 no error signal, so it snaps to nearest.
+
+**An empty segment is a warning, not an answer.** When the best line puts no
+accounts in a segment, the metric doesn't separate the reps' books, and the
+calibrator says so.
+
+## Book quality: the KS column
+
+The Overview's headline column is a signed two-sample Kolmogorov-Smirnov
+distance per rep (`territory_lib.ks_by_segment`, mirrored by `ksForRep()` in
+`static/app.js`; keep them in step). The rep's in-segment account scores are
+compared with the pooled scores of every other in-balance rep in the segment.
+The magnitude is the widest gap between the two cumulative distributions; the
+sign is `+` when the rep's book sits higher on score. KS only sees order, so it
+reads the same on score or on in-segment rank, and it ignores book size: it
+answers "is this rep's mix as good as everyone else's?" while the In-seg
+column answers "how much do they have?". The p-value is the asymptotic
+Kolmogorov distribution with Stephens' correction.
 
 ## Double allocation
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-24T12:30:35-07:00",
+  "generated_at": "2026-11-06T12:20:43-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -8,7 +8,7 @@
   },
   "score_source": {
     "kind": "custom",
-    "path": "/Users/anthonygoldbloom/code/sumble-skills-public/examples/territory-planning/_raw/score.csv",
+    "path": "/private/tmp/claude-501/-Users-anthonygoldbloom-code-sumble/c590cfe5-3216-4ca1-bc49-b09b8aa2a733/scratchpad/agents/examples/territory-planning/_raw/score.csv",
     "note": "Fictitious demo: real public companies + synthetic scores."
   },
   "segments": [
@@ -47,8 +47,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Chen Wei",
-      "email": "chen.wei@northwind.example",
+      "name": "Tom Harris",
+      "email": "tom.harris@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -56,8 +56,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Fatima Khan",
-      "email": "fatima.khan@northwind.example",
+      "name": "Emily Clarke",
+      "email": "emily.clarke@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -74,8 +74,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Sofia Romano",
-      "email": "sofia.romano@northwind.example",
+      "name": "Sophie Turner",
+      "email": "sophie.turner@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -83,8 +83,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Dev Ramesh",
-      "email": "dev.ramesh@northwind.example",
+      "name": "James Walker",
+      "email": "james.walker@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -92,8 +92,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Grace Okafor",
-      "email": "grace.okafor@northwind.example",
+      "name": "Grace Mitchell",
+      "email": "grace.mitchell@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -101,8 +101,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Liam Novak",
-      "email": "liam.novak@northwind.example",
+      "name": "Liam Foster",
+      "email": "liam.foster@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -110,8 +110,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Yuki Tanaka",
-      "email": "yuki.tanaka@northwind.example",
+      "name": "Hannah Wright",
+      "email": "hannah.wright@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -119,8 +119,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Rosa Alvarez",
-      "email": "rosa.alvarez@northwind.example",
+      "name": "Rachel Evans",
+      "email": "rachel.evans@northwind.example",
       "segment": "enterprise",
       "is_rep": true,
       "capacity": null,
@@ -128,8 +128,8 @@
       "effective_capacity": 50
     },
     {
-      "name": "Alex Rivera",
-      "email": "alex.rivera@northwind.example",
+      "name": "Alex Morgan",
+      "email": "alex.morgan@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -146,8 +146,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Sam Patel",
-      "email": "sam.patel@northwind.example",
+      "name": "Sam Cooper",
+      "email": "sam.cooper@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -155,8 +155,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Priya Nair",
-      "email": "priya.nair@northwind.example",
+      "name": "Kate Bennett",
+      "email": "kate.bennett@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -164,8 +164,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Diego Castro",
-      "email": "diego.castro@northwind.example",
+      "name": "Dan Hughes",
+      "email": "dan.hughes@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -173,8 +173,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Maya Cohen",
-      "email": "maya.cohen@northwind.example",
+      "name": "Megan Price",
+      "email": "megan.price@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -182,8 +182,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Noah Schmidt",
-      "email": "noah.schmidt@northwind.example",
+      "name": "Noah Phillips",
+      "email": "noah.phillips@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -191,8 +191,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Aisha Bello",
-      "email": "aisha.bello@northwind.example",
+      "name": "Charlotte Reid",
+      "email": "charlotte.reid@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -200,8 +200,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Ravi Menon",
-      "email": "ravi.menon@northwind.example",
+      "name": "Ryan Collins",
+      "email": "ryan.collins@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -209,8 +209,8 @@
       "effective_capacity": 150
     },
     {
-      "name": "Elena Petrova",
-      "email": "elena.petrova@northwind.example",
+      "name": "Ellie Ward",
+      "email": "ellie.ward@northwind.example",
       "segment": "commercial",
       "is_rep": true,
       "capacity": null,
@@ -223,6 +223,7 @@
     "sources": [
       "google_calendar"
     ],
+    "as_of": "2026-07-31",
     "company_domain": "northwind.example",
     "freemail_excludes": [
       "163.com",

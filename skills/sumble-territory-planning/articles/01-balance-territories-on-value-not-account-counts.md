@@ -8,8 +8,8 @@ Companion to [`sumble-account-scoring`](../../sumble-account-scoring/articles/01
 
 ## TLDR
 - An even account count is not a fair book: a rep with an exactly average-sized book can still hold most of the segment's best accounts.
-- Balance on **value**, read as two numbers: **Capture** — the share of the segment's best accounts in a rep's book — and **Activation** — how much of what they hold they're actually working.
-- The expensive quadrant is high Capture, low Activation: strong accounts parked with a rep who isn't touching them. Count-based planning can't see it. This app makes it the headline.
+- Balance on **value**, read as two numbers: **KS**, how far a rep's mix of accounts sits from their peers' (stronger or weaker), and **Activation**, how much of the best business they hold they're actually working.
+- The expensive combination is a strong book (positive KS) with low Activation: good accounts parked with a rep who isn't touching them. Count-based planning can't see it. This app makes it the headline.
 - Rank accounts **within their segment**, never globally — a Commercial rank of 2 and an Enterprise rank of 2 come from different universes, and averaging across them produces numbers that mean nothing.
 - "Value" has to be real: book strength comes from an ICP-tuned account score, not headcount or gut.
 - Nothing touches your CRM. The balancer *proposes*; you accept or reject each move and export an `actions.csv`.
@@ -22,25 +22,27 @@ Two reps with 75 accounts each can hold completely different books. One has eigh
 
 Concentration is invisible to a headcount split precisely because it's about *which* accounts, not *how many*. So stop measuring the size of the pile and start measuring its value.
 
-## Two questions, kept apart: Capture and Activation
+## Two questions, kept apart: KS and Activation
 
 "Is this book fair?" is really two questions, and jamming them into one number is why territory dashboards get ignored. The skill keeps them apart, as two columns a RevOps lead can read without a decoder ring.
 
-**Capture — how much of the segment's best business sits in this rep's book.** Take the segment's best accounts by ICP score and add up what they're worth: an account in the segment's top 10% counts double, the top 25% counts once, everything below counts zero. A rep at 20% Capture holds a fifth of the segment's best business. Reps in a segment should land close together — roughly within 1.5× of each other. One rep at 3–4× another is hoarding the good stuff; a rep near 0% has been under-supplied, or is ramping.
+**KS: is this rep's book as strong as their peers'?** Line up every account in a rep's book by ICP score, and do the same for every other rep in the segment pooled together. Walk up the score scale and, at each point, compare the share of each book that falls below it. The widest gap is the Kolmogorov-Smirnov distance. 0 means the rep was dealt the same mix of strong and weak accounts as everyone else; +0.3 means their book skews clearly stronger; −0.3, clearly weaker. Under 0.1 is even. Above 0.25 is a real difference.
+
+I like KS here for two reasons. It's blind to book size, so a rep with 30 accounts and a rep with 300 can both read 0, and quantity stays a separate column instead of leaking into the quality number. And it comes with a p-value, so a ramping rep with eight accounts who looks lopsided by luck is greyed out instead of flagged. Click any KS value and the app shows that rep's accounts ranked against the segment, with the two distributions drawn and the gap marked.
 
 **Activation — of the best business a rep already holds, how much are they working.** Same weighting, different question: what share of it has had a meeting, call, or outbound email in the activity window. It's deliberately independent of book size — a rep with 30 accounts and a rep with 300 can both be at 100%.
 
-Splitting them turns a vague "seems off" into a diagnosis. The quadrant that costs you money is **high Capture, low Activation**: the segment's best accounts are parked with someone who isn't touching them. No account count will ever surface that. It's the single most expensive thing a book can be doing, and it's the first thing this app shows you.
+Splitting them turns a vague "seems off" into a diagnosis. The quadrant that costs you money is **strong book, low Activation**: the segment's best accounts are parked with someone who isn't touching them. No account count will ever surface that. It's the single most expensive thing a book can be doing, and it's the first thing this app shows you.
 
 ## Rank within a segment, not globally
 
 A rep's book mixes segment sizes — a marquee account that falls just below your enterprise line still lives in Commercial — and a Commercial rank of 2 is not comparable to an Enterprise rank of 2. Average ranks across both universes and you get numbers no real book could produce.
 
-So the app ranks each rep's accounts only against their own segment, and shows one honest depth column: the average in-segment rank of the rep's **top 25** accounts, where 1 would mean they own the segment's very best 25. One number a reviewer can hold in their head, not a ladder of five nested cutoffs that reads as noise. Coverage adds a whole-book column so you can see how far activity falls off past the top of the book; strength doesn't, because an average rank over a whole book is dragged around by book size and invites exactly the cross-rep comparison it can't support.
+So the app compares each rep only against peers in their own segment, and when you click into a rep it ranks their accounts against that segment alone. Coverage adds a whole-book column so you can see how far activity falls off past the best accounts.
 
 ## The value has to be real
 
-Capture and Activation are only as good as the "value" underneath them. If value means headcount, you've rebuilt the size ranking you were trying to escape; if it means gut feel, reps won't trust the reassignment.
+KS and Activation are only as good as the "value" underneath them. If value means headcount, you've rebuilt the size ranking you were trying to escape; if it means gut feel, reps won't trust the reassignment.
 
 This skill takes account strength from a [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) run — a score calibrated to *your* closed-won deals, where every component links through to the people, teams, and projects behind it. (No scoring run yet? It falls back to Sumble's own account score via the API.) Either way, "the segment's best accounts" means best *for you*, not biggest, and a rep facing a proposed move can click through to why the account is worth taking.
 
@@ -66,10 +68,11 @@ The proposals land in a review queue as the app's primary call to action. One dr
 
 The repo ships a runnable demo at [`examples/territory-planning/`](../../../examples/territory-planning) — a fictitious vendor, *Northwind*, with 1,935 accounts and 20 reps (10 Enterprise, 10 Commercial). The data is synthetic, but it's built to show the shapes you'll recognize:
 
-- **Chen Wei** holds the biggest Enterprise book and a third of the segment's best accounts (33% Capture) — and works almost none of them (6% Activation). The sitting-on-value quadrant, invisible to an account count.
-- **Dev Ramesh** is the foil: a smaller book worked to 100% Activation.
-- **Grace Okafor** is a ramping rep at 0% — a small book by design, so a low number reads as "new," not "failing."
-- **Alex Rivera** is the commercial star: the biggest book, and works it hardest.
+- **Tom Harris** holds the biggest Enterprise book and the strongest one (KS +0.32) — and works almost none of it (4% Activation). The sitting-on-value quadrant, invisible to an account count.
+- **Marcus Bell** is the other end: a normal-sized Enterprise book that skews clearly weaker than their peers' (KS −0.30).
+- **James Walker** is the foil: a smaller book worked to 100% Activation.
+- **Grace Mitchell** is a ramping rep at 0% — a small book by design, so a low number reads as "new," not "failing."
+- **Alex Morgan** is the commercial star: the biggest book, the strongest mix (KS +0.29), and works it hardest.
 
 Under the current settings the balancer makes 480 proposals — owners for 445 unallocated accounts, 18 wrong-segment handbacks, 17 rebalance moves — which together would take both segments from uneven (CV ≈ 0.3) to balanced (≈ 0.1) if every one were accepted. Which, of course, they shouldn't be blindly. That's what the review queue is for.
 
@@ -88,7 +91,7 @@ You need a coding agent (**Claude Code**, **OpenAI Codex**, or **Cursor**), your
 npx skills add SumbleData/agents --skill sumble-territory-planning
 ```
 
-Start a new agent session and run it (`/sumble-territory-planning` in Claude Code; "use the sumble-territory-planning skill" in Codex or Cursor). The interview sets your segments (Enterprise + Commercial by default), whether the segment line is a hard rule or should be calibrated from your data, and your target book size per segment. Then:
+Start a new agent session and run it (`/sumble-territory-planning` in Claude Code; "use the sumble-territory-planning skill" in Codex or Cursor). The interview sets your segments (Enterprise + Commercial by default), what decides them (account score, headcount, revenue from your CRM, or another CRM field), whether the line is a hard rule or should be calibrated from your data, and your target book size per segment. Then:
 
 ```bash
 cd territory_planning/<your-company>

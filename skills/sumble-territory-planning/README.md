@@ -30,6 +30,15 @@ Balance is the coefficient of variation of **total account score** per rep, not
 account count — a rep with 40 weak accounts does not have a bigger book than one
 with 15 strong ones.
 
+Book quality is a signed Kolmogorov-Smirnov distance between each rep's account
+scores and their segment peers' pooled scores: 0 is the same mix, + stronger,
+− weaker. Click a rep's KS value to see their accounts ranked against the
+segment.
+
+Segments can be decided by account score, total or job-function headcount,
+revenue (from the CRM), or any numeric CRM field, as a hard line or calibrated
+from how the reps' books are split today.
+
 ## The constraint that shapes everything
 
 **An account with activity is never proposed for a move.** A rep who has met,

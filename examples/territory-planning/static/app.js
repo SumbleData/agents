@@ -40,9 +40,9 @@ const state = {
 };
 
 const PAGE_DESCRIPTIONS = {
-  overview: "Whether each rep's book is as strong as their peers' (Kolmogorov-Smirnov distance) — plus what needs attention. Click a distance to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, Activity is the share of their accounts touched in the activity window, on their top N and on all accounts.",
-  accounts: "Every account. Assign any account to anyone with the dropdown in the last column — the Overview books update as you go. Filter by a flag, a rep, a segment, or the balancer's suggested moves (accept/reject inline). Click a row for its activity detail.",
-  export: "Download the approved changes for your CRM, or the full sheet with every flag and activity count.",
+  overview: "Each rep's book against their segment peers. Click a distance for the rep's ranked accounts, or a rep to open their accounts.",
+  accounts: "Every account. Reassign with the last column; filter by flag, rep, segment or suggested move.",
+  export: "Approved changes for your CRM, or the full sheet.",
 };
 
 // Flags read the EFFECTIVE owner (current + your allocations), so they update
@@ -53,15 +53,15 @@ const PAGE_DESCRIPTIONS = {
 // the question is unanswerable. See hasActivityData().
 const FLAGS = [
   { key: "not_worked",       label: "Not being worked",  test: (r) => effectiveOwner(r) && !num(r.worked), cls: "flag-warn", needsActivity: true,
-    help: "Owned, but the owner has had no meeting, call, or outbound email with them in the window." },
+    help: "Owned, with no meeting, call, email or Slack post in the window." },
   { key: "strong_idle",      label: "Strong but idle",   test: (r) => isStrong(r) && effectiveOwner(r) && !num(r.worked), cls: "flag-bad", needsActivity: true,
-    help: "Among the strongest accounts by ICP score (see the cutoff on the left), owned, and nobody is working it. The most expensive kind of neglect." },
+    help: "A top account by score, owned, and not being worked." },
   { key: "strong_unallocated", label: "Strong but unallocated", test: (r) => isStrong(r) && !effectiveOwner(r) && !isWhitespace(r), cls: "flag-bad",
-    help: "Among the strongest accounts by ICP score (see the cutoff on the left), and no active rep owns it. Allocating it clears this flag." },
+    help: "A top account by score with no owner." },
   { key: "segment_misfit",   label: "Wrong segment",     test: (r) => { const o = effectiveOwner(r); return !!o && !!repSegment(o) && !!r.account_segment && repSegment(o) !== r.account_segment; }, cls: "flag-warn",
-    help: "The account's size puts it in one segment; its owner sells another." },
+    help: "Sized for one segment, owned by a rep in another." },
   { key: "double_allocated", label: "Double-allocated",  test: (r) => num(r.double_allocated), cls: "flag-bad",
-    help: "Two or more reps own CRM records that resolve to the SAME company. Resolve these before rebalancing." },
+    help: "Two reps own records for the same company. Fix these first." },
 ];
 
 const REASON_LABELS = {
@@ -132,193 +132,7 @@ function effectiveOwner(r) {
     ? (r.proposed_owner || r.owner || "") : (r.owner || "");
 }
 function repSegment(name) { return (state.repByName[name] || {}).segment || ""; }
-// ------------------------------------------------------------- calibration
 
-/** The two knobs that define a territory plan: where the line between segments
- *  sits on the boundary metric, and how many accounts a rep in each segment is
- *  meant to carry. Both are judgement calls, so the panel previews their effect
- *  client-side on every keystroke and only commits when you click Apply. */
-
-function boundaryThresholds() {
-  const out = {};
-  for (const t of state.plan.boundary?.thresholds || []) out[t.segment] = t.min;
-  return out;
-}
-
-/** Which segment a size falls in, mirroring territory_lib.segment_for_size:
- *  thresholds are inclusive minimums, highest first; anything below them all
- *  lands in the smallest segment. */
-function segmentForSize(size, thresholds) {
-  const ordered = [...state.segments].sort((a, b) => b.order - a.order);
-  for (const seg of ordered) {
-    const min = thresholds[seg.key];
-    if (min !== undefined && min !== null && size >= num(min)) return seg.key;
-  }
-  const smallest = [...state.segments].sort((a, b) => a.order - b.order)[0];
-  return smallest ? smallest.key : "";
-}
-
-/** Read whatever is currently typed into the panel. */
-function calibrateFormValues() {
-  const thresholds = {}, capacities = {};
-  for (const seg of state.segments) {
-    const t = $(`#cal-threshold-${seg.key}`);
-    const c = $(`#cal-capacity-${seg.key}`);
-    if (t) thresholds[seg.key] = t.value.trim();
-    if (c) capacities[seg.key] = c.value.trim();
-  }
-  return { thresholds, capacities };
-}
-
-function renderCalibrate() {
-  const saved = boundaryThresholds();
-  const metric = state.plan.boundary?.label || state.plan.boundary?.metric || "size";
-  const ordered = [...state.segments].sort((a, b) => a.order - b.order);
-
-  const smallest = ordered[0];
-
-  // Only rebuild the inputs when the segment set changes, so typing is not
-  // interrupted by a re-render.
-  if ($("#calibrate-controls").dataset.built !== "1") {
-    // Box 1 — the segment cutoff. One threshold per segment ABOVE the smallest;
-    // the smallest segment has no line of its own, it is "everything below".
-    const cutoffRows = ordered
-      .filter((seg) => seg.key !== smallest.key)
-      .map((seg) => {
-        const t = saved[seg.key];
-        return `<label class="cal-field">
-          <span>${esc(seg.label)} at or above</span>
-          <input type="number" min="0" step="1" id="cal-threshold-${esc(seg.key)}"
-                 class="terr-input" value="${t ?? ""}" />
-        </label>`;
-      }).join("");
-
-    // Box 2 — target accounts per rep, one per segment.
-    const capRows = ordered.map((seg) => `<label class="cal-field">
-        <span>${esc(seg.label)}</span>
-        <input type="number" min="0" step="1" id="cal-capacity-${esc(seg.key)}"
-               class="terr-input" value="${seg.default_capacity ?? ""}"
-               placeholder="unlimited" />
-      </label>`).join("");
-
-    $("#calibrate-controls").innerHTML = `
-      <div class="cal-box">
-        <h4 class="cal-box-title">Segment cutoff</h4>
-        <p class="cal-box-sub">Where the line falls on ${esc(metric)}.
-          ${esc(smallest.label)} is everything below it.</p>
-        ${cutoffRows}
-        <p class="cal-preview" id="cal-preview-counts"></p>
-      </div>
-      <div class="cal-box">
-        <h4 class="cal-box-title">Target accounts per rep</h4>
-        <p class="cal-box-sub">Cap per rep, by segment. Blank means unlimited.</p>
-        ${capRows}
-        <p class="cal-preview" id="cal-preview-seats"></p>
-      </div>`;
-    $("#calibrate-controls").dataset.built = "1";
-    $$("#calibrate-controls input").forEach((el) => {
-      el.oninput = renderCalibratePreview;   // live preview as you type
-      el.onchange = applyCalibration;         // commit (blur / Enter) re-runs
-    });
-  }
-  renderCalibratePreview();
-}
-
-/** Live, client-side: how many accounts land in each segment at the typed
- *  threshold, and how many the typed capacity can actually hold. The preview is
- *  instant; committing the field (blur / Enter) re-runs the balancer. */
-function renderCalibratePreview() {
-  const { thresholds } = calibrateFormValues();
-  const parsed = {};
-  for (const [k, v] of Object.entries(thresholds)) {
-    if (String(v).trim() !== "") parsed[k] = num(v);
-  }
-  const counts = {}, owned = {};
-  for (const seg of state.segments) { counts[seg.key] = 0; owned[seg.key] = 0; }
-  for (const r of state.rows) {
-    const key = segmentForSize(num(r.size_metric), parsed);
-    if (counts[key] === undefined) continue;
-    counts[key] += 1;
-    if (r.owner) owned[key] += 1;
-  }
-  const repsPerSeg = {};
-  for (const seg of state.segments) {
-    repsPerSeg[seg.key] = state.reps.filter(
-      (rep) => rep.segment === seg.key && rep.in_balance !== false).length;
-  }
-  const ordered = [...state.segments].sort((a, b) => a.order - b.order);
-
-  // Cutoff box: how the line splits the book right now.
-  const countsEl = $("#cal-preview-counts");
-  if (countsEl) {
-    countsEl.innerHTML = ordered.map((seg) => {
-      const unowned = counts[seg.key] - owned[seg.key];
-      return `<strong>${esc(seg.label)}</strong> ${fmt(counts[seg.key])} accounts ` +
-        `(${fmt(unowned)} unowned)`;
-    }).join("<br />");
-  }
-
-  // Capacity box: do the seats cover the demand?
-  const seatsEl = $("#cal-preview-seats");
-  if (seatsEl) {
-    seatsEl.innerHTML = ordered.map((seg) => {
-      const capEl = $(`#cal-capacity-${seg.key}`);
-      const cap = capEl && capEl.value.trim() !== "" ? num(capEl.value) : null;
-      const n = repsPerSeg[seg.key];
-      if (cap === null) {
-        return `<strong>${esc(seg.label)}</strong> ${fmt(n)} rep${n === 1 ? "" : "s"}, no cap`;
-      }
-      const seats = cap * n;
-      let note = `<strong>${esc(seg.label)}</strong> ${fmt(n)} × ${fmt(cap)} = ${fmt(seats)} seats`;
-      if (seats < counts[seg.key]) {
-        note += ` — <span class="cal-warn">${fmt(counts[seg.key] - seats)} cannot be held</span>`;
-      }
-      return note;
-    }).join("<br />");
-  }
-}
-
-let calibrating = false;
-async function applyCalibration() {
-  if (calibrating) return;               // a commit is already in flight
-  const { thresholds, capacities } = calibrateFormValues();
-  calibrating = true;
-  $("#calibrate-status").textContent = "Re-running the balancer…";
-  try {
-    const res = await fetch("/api/calibrate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Calibration always preserves the user's accept / reject / manual
-      // decisions; it only re-derives the pipeline's own suggestions.
-      body: JSON.stringify({ thresholds, capacities, reset: false }),
-    });
-    if (!res.ok) {
-      $("#calibrate-status").textContent =
-        `Could not apply: ${res.status} ${await res.text()}`;
-      return;
-    }
-    const out = await res.json();
-    state.plan = out.plan;
-    state.rows = out.rows;
-    state.segments = [...out.plan.segments].sort((a, b) => a.order - b.order);
-    state.segLabel = Object.fromEntries(state.segments.map((s) => [s.key, s.label]));
-    state.reps = out.plan.reps.filter((r) => r.is_rep);
-    state.repByName = Object.fromEntries(state.reps.map((r) => [r.name, r]));
-    const c = out.report.counts;
-    const unrouted = Object.entries(out.report.unrouted || {})
-      .map(([k, v]) => `${state.segLabel[k] || k} ${fmt(v)}`).join(", ");
-    $("#calibrate-status").innerHTML =
-      `Applied. <strong>${fmt(out.report.total)}</strong> proposals — ` +
-      `${fmt(c.misfit)} wrong-segment, ${fmt(c.assign_unallocated)} unowned, ` +
-      `${fmt(c.rebalance)} rebalance.` +
-      (unrouted ? ` <strong>Left unowned at this capacity:</strong> ${unrouted}.` : "") +
-      (out.report.frozen ? ` ${fmt(out.report.frozen)} of your own decisions kept.` : "");
-    $("#calibrate-controls").dataset.built = "";
-    render();
-  } finally {
-    calibrating = false;
-  }
-}
 
 // ---------------------------------------------------------------- rendering
 
@@ -352,16 +166,13 @@ function movesCtaHtml() {
   }
   const n = state.rows.filter((r) => r.proposal_status === "suggested").length;
   if (!n) {
-    return `<div class="moves-cta empty">No suggested moves right now — the books are
-      balanced under the current settings. Change the segment line or the target book
-      size on the left to re-run the balancer.</div>`;
+    return `<div class="moves-cta empty">No suggested moves.</div>`;
   }
   return `<button class="moves-cta" type="button">
     <span class="moves-cta-count">${fmt(n)}</span>
     <span class="moves-cta-text">
       <strong>Review suggested moves</strong>
-      <span class="moves-cta-sub">Accounts the balancer would hand to a different
-        rep — accept or dismiss each one.</span>
+      <span class="moves-cta-sub">Accept or dismiss each one.</span>
     </span>
     <span class="moves-cta-arrow">→</span>
   </button>`;
@@ -386,14 +197,9 @@ function renderOverview() {
   const { sizes } = segmentRanks();
   const parts = [
     `<p class="eval-diag-sub" id="matrices-note">` +
-    "Per rep, against the other reps in the same segment: the <strong>Kolmogorov-Smirnov " +
-    "distance</strong> on their <strong>top N</strong> accounts (do they have as much good " +
-    "opportunity as their peers? N is set per segment in the sidebar) and on " +
-    "<strong>all accounts</strong> (is their mix as strong?). 0 = even, + = stronger, " +
-    "− = weaker; <strong>click a distance</strong> to see their accounts ranked. " +
-    "<strong>Activity</strong> is the share of their accounts (top N, and all) with a " +
-    "meeting, call or email in the activity window. <strong>Click any header to sort</strong>; click a rep " +
-    "to open their accounts. Hover any ⓘ for the detail.</p>",
+    "Kolmogorov-Smirnov distance against segment peers: 0 even, + stronger, − weaker. " +
+    "Top N compares each rep's best N accounts; all accounts compares whole books. " +
+    "Activity is the share of accounts touched in the window. Grey = could be chance.</p>",
   ];
 
   // Only segments that actually have reps; pick a valid selection ("all" shows
@@ -427,23 +233,11 @@ function renderOverview() {
       : "Kolmogorov-Smirnov distance, all accounts",
     better: "diverging", fmt: signed, cls: "ks-cell", ksMode: mode,
     help: mode === "top"
-      ? `Does this rep have as much good opportunity as their peers? Compares the rep's ` +
-        `best ${fmt(n)} accounts by score with each peer's best ${fmt(n)}, pooled, and ` +
-        `finds the score where the two differ most. That gap is the Kolmogorov-Smirnov ` +
-        `distance: 0 = even, + = stronger, − = weaker, ±1 = no overlap.\n\n` +
-        `A rep with fewer than ${fmt(n)} accounts has empty slots that count as score 0, ` +
-        `so a thin book reads weaker: fewer accounts, fewer chances. Accounts past their ` +
-        `top ${fmt(n)} don't count, so piling on weak accounts doesn't help. Change N in ` +
-        `the sidebar.\n\nRough guide: under 0.1 is even, 0.1–0.25 is worth a look, above ` +
-        `0.25 is a real difference. A greyed value could be chance (p ≥ ${KS_SIGNIFICANCE}). ` +
-        `Click a value to see the rep's accounts ranked.`
-      : `Is this rep's mix of accounts as strong as their peers'? Compares the scores of ` +
-        `every account in the rep's book with every peer account, pooled, and finds the ` +
-        `score where the two differ most.\n\nIt ignores book size: a rep with 30 accounts ` +
-        `and one with 300 can both read 0 if the mix is the same. Read it next to the top-N ` +
-        `column, which does count book size. Small books read bigger by chance; a greyed ` +
-        `value could be chance (p ≥ ${KS_SIGNIFICANCE}). Click a value to see the rep's ` +
-        `accounts ranked.`,
+      ? `The rep's best ${fmt(n)} accounts against each peer's best ${fmt(n)}. ` +
+        `Missing accounts count as 0, so a thin book reads weaker. Under 0.1 is even, ` +
+        `over 0.25 a real gap. Click for the ranked accounts.`
+      : `The rep's whole book against their peers' books. Ignores book size. ` +
+        `Click for the ranked accounts.`,
     value: (book, grp) => {
       const k = ksForRep(book, grp, mode === "top" ? n : null);
       return k.n_peers ? { v: k.ks, muted: k.p >= KS_SIGNIFICANCE } : null;
@@ -456,15 +250,8 @@ function renderOverview() {
     key: mode === "top" ? "act_top" : "act_all",
     label: mode === "top" ? `Activity, top ${fmt(n)}` : "Activity, all accounts",
     better: "high", fmt: (v) => `${fmt(v, 0)}%`,
-    help: (mode === "top"
-      ? `Of this rep's top ${fmt(n)} accounts by score (or all of them, if they have ` +
-        `fewer), what share had a meeting, call, or outbound email in the last ` +
-        `${windowDays} days?`
-      : `Of every account this rep owns in this segment, what share had a meeting, ` +
-        `call, or outbound email in the last ${windowDays} days?`) +
-      `\n\nA plain count: every account counts the same. A strong book with low ` +
-      `Activity is the expensive combination: good accounts parked with someone ` +
-      `who isn't working them.`,
+    help: (mode === "top" ? `Share of the rep's top ${fmt(n)} accounts` : "Share of the rep's accounts") +
+      ` with a meeting, call, email or Slack post in the last ${windowDays} days.`,
     value: (book) => {
       const slice = mode === "top"
         ? [...book].sort((a, b) => num(b.score) - num(a.score)).slice(0, n) : book;
@@ -493,10 +280,7 @@ function renderOverview() {
   }
   if (!hasAct && shown.length) {
     parts.push(
-      `<div class="terr-note">No activity data loaded, so Activity cannot be ` +
-      `measured. The Activity columns and the worked-based flags are hidden ` +
-      `rather than shown as zero. The Kolmogorov-Smirnov distances are unaffected: ` +
-      `they come from account score and ownership only.</div>`);
+      `<div class="terr-note">No activity loaded, so Activity is hidden.</div>`);
   }
   $("#overview-segments").innerHTML = parts.join("");
   $$("#overview-segments .seg-pill").forEach((btn) => {
@@ -728,9 +512,8 @@ function showRepRanking(repName, segKey, mode = "top") {
       ${k.n_peers ? ksChartHtml(k.mine, k) : ""}
     </div>
     <div class="detail-section">
-      <h3>Their ${esc(segLabel)} accounts, strongest first</h3>
-      <p class="eval-diag-sub">Segment rank is out of ${fmt(sizes[segKey] || 0)}
-        ${esc(segLabel)} accounts (1 = best). Click an account for its detail.</p>
+      <h3>Accounts, strongest first</h3>
+      <p class="eval-diag-sub">Rank out of ${fmt(sizes[segKey] || 0)} (1 = best).</p>
       <table class="detail-table ks-rank-table"><thead><tr>
         <th class="num">#</th><th>Account</th><th class="num">Seg rank</th>
         <th class="num">Score</th>${activity ? `<th class="num">Worked</th>` : ""}
@@ -819,12 +602,8 @@ function ksChartHtml(bookScores, k) {
       </svg>
       <div id="ks-tip" class="ks-tip hidden"></div>
     </div>
-    <p class="eval-diag-sub">${k.top_n
-      ? `Each line is the share of a rep's top ${fmt(k.top_n)} accounts scoring at least
-        the score on the x axis. Empty slots score 0, so a thin book's line starts below 100%.`
-      : `Each line is the share of a book scoring at least the score on the x axis.`}
-      The dashed rule marks the widest gap between the two lines: that gap is the
-      Kolmogorov-Smirnov distance.</p>`;
+    <p class="eval-diag-sub">Share of each side scoring at least x. The dashed line
+      is the widest gap: the distance.</p>`;
 }
 
 /** Crosshair + tooltip on the KS chart: at the hovered score, the share of this
@@ -1138,8 +917,7 @@ function renderExport() {
   $("#export-summary").innerHTML = `
     <p><strong>${fmt(approved.length)}</strong> approved change${approved.length === 1 ? "" : "s"} ready to export.
     ${pending ? `<strong>${fmt(pending)}</strong> proposal${pending === 1 ? " is" : "s are"} still undecided.` : ""}</p>
-    <p class="eval-diag-sub">actions.csv lists one row per owner change (from → to, with the reason
-      and the evidence). Nothing is written to your CRM by this app — the export is the hand-off.</p>`;
+    <p class="eval-diag-sub">One row per owner change. Nothing is written to your CRM.</p>`;
 
   const cols = ["Account", "Segment", "From", "To", "Reason", "Score", ""];
   $("#export-table thead").innerHTML = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
@@ -1208,24 +986,22 @@ function showDetail(orgId) {
           ${ownerOptions}
         </select>
       </p>
-      ${num(r.worked) ? `<p class="eval-diag-sub">⚠ ${esc(r.owner)} has worked this account in the window —
-        the balancer would never move it, so a move here is deliberately your call.</p>` : ""}
+      ${num(r.worked) ? `<p class="eval-diag-sub">⚠ Being worked: the balancer won't move it.</p>` : ""}
     </div>
     <div class="detail-section">
-      <h3>Activity with this owner · last ${fmt(state.plan.activity?.window_days || 90)} days</h3>
+      <h3>Activity · last ${fmt(state.plan.activity?.window_days || 90)} days</h3>
       ${total ? `<table class="detail-table"><tbody>${acts.map(([k, v]) =>
         `<tr><td>${k}</td><td class="num">${fmt(v)}</td></tr>`).join("")}
         <tr><td>Last touch</td><td class="num">${esc(r.last_activity_date || "—")}</td></tr>
         <tr><td>Sources</td><td class="num">${esc((r.activity_sources || "").split("|").join(", ") || "—")}</td></tr>
         </tbody></table>`
-        : `<p class="empty-state">No recorded activity between this owner and this account.
-           That is what makes it eligible to be reassigned.</p>`}
-      <p class="eval-diag-sub">Counts are between <em>this owner</em> and this account only —
-        not the whole team.</p>
+        : `<p class="empty-state">No activity in the window.</p>`}
+      <p class="eval-diag-sub">${state.plan.activity?.attribution === "anyone"
+        ? "Anyone at the company." : "The owner only."}</p>
     </div>
     <div class="detail-section">
       <h3>Flags</h3>
-      <p>${flagPills(r) || "<span class='eval-diag-sub'>None — owned, in the right segment, and being worked.</span>"}</p>
+      <p>${flagPills(r) || "<span class='eval-diag-sub'>None.</span>"}</p>
     </div>`;
   const sel = $("#detail-owner-select");
   if (sel) {
@@ -1268,7 +1044,6 @@ function switchTab(tab) {
 
 function render() {
   computeStrongSet();  // refresh the "strong" set for the attention flags
-  renderCalibrate(); // the sidebar is always visible, independent of the tab
   if (state.tab === "overview") renderOverview();
   else if (state.tab === "accounts") renderAccounts();
   else if (state.tab === "export") renderExport();
@@ -1316,21 +1091,13 @@ async function init() {
 
   $$(".tab").forEach((t) => { t.onclick = () => switchTab(t.dataset.tab); });
   $("#calibrate-reset-fields").onclick = () => {
-    // Put every field back to the plan's saved values: the segment/capacity
-    // inputs (rebuilt from the plan) and the strong-account cutoff.
-    state.strongCutoff = num(state.plan.strong_cutoff) || 500;
-    $("#strong-cutoff").value = state.strongCutoff;
+    // Put every field back to the plan's saved values: the segment cutoff
+    // (rebuilt from the plan) and the top N.
     resetKsTopN();
-    $("#calibrate-controls").dataset.built = "";
-    $("#calibrate-status").textContent = "";
     render();
   };
-  $("#strong-cutoff").value = state.strongCutoff;
-  $("#strong-cutoff").oninput = (e) => {
-    state.strongCutoff = Math.max(1, num(e.target.value) || 500);
-    state.page = 0;
-    render();
-  };
+  // The strong-account cutoff is not editable in the app; it comes from the
+  // plan's strong_cutoff.
   $("#search-input").oninput = (e) => { state.search = e.target.value; state.page = 0; render(); };
   $("#rep-filter").onchange = (e) => { state.repFilter = e.target.value; state.page = 0; render(); };
   $("#segment-filter").onchange = (e) => { state.segmentFilter = e.target.value; state.page = 0; render(); };

@@ -2,8 +2,8 @@
 
 A public, self-contained demo of the [`sumble-territory-planning`](../../skills/sumble-territory-planning)
 skill's app: a **book-strength table per segment** (Kolmogorov-Smirnov distance vs peers on
-each rep's top N and on all accounts, each with an Activity share; click a distance to see that rep's accounts ranked), a live **Calibrate**
-sidebar (segment boundary, per-rep capacity, strong-account cutoff, top N), a
+each rep's top N and on all accounts, each with an Activity share; click a distance to see that rep's accounts ranked), a **Top N**
+sidebar, a
 granular **Accounts** tab where you assign any account to anyone, and a
 suggest → accept/reject → **Export** flow.
 
@@ -27,8 +27,8 @@ python3 app.py          # http://localhost:8002
 - **Books are sized to target.** Every rep is dealt a fixed quota, so all 20
   books land within **±40%** of their segment's target (Enterprise 50, so
   30–70; Commercial 150, so 90–210). `make_demo.py` fails the build if one
-  drifts outside that band — otherwise "Target accounts per rep" in the
-  Calibrate panel would be describing something the data doesn't do.
+  drifts outside that band — otherwise the segment's target book size
+  (`default_capacity`) would describe something the data doesn't do.
 
 The seeded numbers tell a story on purpose: one enterprise rep (*Tom Harris*)
 holds the segment's biggest and strongest book but works almost none of it

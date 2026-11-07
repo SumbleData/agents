@@ -36,40 +36,13 @@
       <!-- ================= Calibrate sidebar ================= -->
       <aside class="calibrate-panel" id="calibrate-panel">
         <div class="panel-header">
-          <h2>Calibrate</h2>
+          <h2>Top N</h2>
         </div>
-        <p class="panel-sub">
-          The two judgement calls in a territory plan: where the segment line
-          sits, and how many accounts each rep should carry. They preview live as
-          you type; leaving a field (or pressing Enter) re-runs the balancer.
-        </p>
-        <div id="calibrate-controls" class="calibrate-controls"></div>
-        <p id="calibrate-status" class="calibrate-status"></p>
-
-        <div class="cal-box strong-box">
-          <h4 class="cal-box-title">Strong-account cutoff</h4>
-          <p class="cal-box-sub">
-            An account counts as "strong" for the attention flags if it's in the
-            top N by ICP score. Updates the flags live — no re-suggest needed.
-          </p>
-          <label class="cal-field">
-            <span>Top N by score</span>
-            <input type="number" min="1" step="1" id="strong-cutoff" class="terr-input" />
-          </label>
-        </div>
-
-        <div class="cal-box ks-topn-box">
-          <h4 class="cal-box-title">Top N for the Kolmogorov-Smirnov distance</h4>
-          <p class="cal-box-sub">
-            How many of each rep's best accounts the top-N distance compares,
-            by segment. Roughly the book a rep can work. Updates the tables
-            live.
-          </p>
-          <div id="ks-topn-fields"></div>
-        </div>
+        <p class="panel-sub">Best accounts per rep to compare, by segment.</p>
+        <div id="ks-topn-fields"></div>
 
         <div class="calibrate-actions">
-          <button id="calibrate-reset-fields" class="btn-link" type="button">Reset fields</button>
+          <button id="calibrate-reset-fields" class="btn-link" type="button">Reset</button>
         </div>
       </aside>
 
@@ -86,7 +59,7 @@
         <div id="overview-segments"></div>
         <div id="overview-moves-cta" class="moves-cta-wrap"></div>
         <h4 class="terr-h4">Also worth a look</h4>
-        <p class="eval-diag-sub">Click any card to open that set in the Accounts tab.</p>
+        <p class="eval-diag-sub">Click a card to open those accounts.</p>
         <div id="highlight-cards" class="highlight-cards"></div>
       </section>
 

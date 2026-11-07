@@ -137,9 +137,8 @@ who the reps are, where activity comes from. Everything after that is a dial in
 the app.
 
 So: **stop interviewing once the shape is settled, and ship.** The boundary
-threshold and the per-rep capacity are the two things the Calibrate panel exists
-to tune, so a first pass at both is enough — do not keep asking the user to
-refine numbers in chat that they are about to drag in the UI. Likewise, when a
+threshold and capacity live in `spec.json`, so a first pass at both is enough;
+re-running the pipeline after a change takes seconds. Likewise, when a
 result looks wrong (a rep gets no moves, a segment routes nothing), **report it
 and hand over the app**; do not spend turns proposing re-runs with different
 constants. Explaining which dial fixes it beats running it for them.
@@ -160,7 +159,7 @@ territory_planning/{company}/
   territory.csv           one row per Sumble org: identity, score, segment,
                             owner, every flag, per-rep activity counts, proposal
   actions.csv             written by the app: approved owner changes for the CRM
-  static/                 UI: Calibrate panel, book-depth heatmaps, tables, move queue
+  static/                 UI: Top N sidebar, book-strength tables, accounts, move queue
   README.md
   _raw/                   agent-written inputs + fetch responses + audit
 ```
@@ -210,10 +209,9 @@ working state.
   it is counted and displayed but does not clear this flag on its own.
 - `strong_idle` — one of the **top `strong_cutoff` accounts by ICP score**
   (global, default 500), owned, and not worked: the strongest accounts nobody is
-  working. The app recomputes this live from a **Strong-account cutoff** control in
-  the sidebar (the CSV column is the baseline at the default). The `strong_unallocated`
-  highlight (strong + unallocated) is derived the same way, live in the app — it is
-  not a CSV column.
+  working. The cutoff is `strong_cutoff` in `spec.json`; the app has no control
+  for it. The `strong_unallocated` highlight (strong + unallocated) is derived from
+  the same cutoff in the app — it is not a CSV column.
 
 `whitespace` is a valid `account_category` and is still routed by the mover, but it
 is **not** shown as an attention highlight card — a territory review is about the
@@ -721,8 +719,7 @@ Tell them how to work it, in this order:
      read on the same N slots, so the noise is the same for all of them. N is
      per segment: `ks_top_n` on each segment in `territory-plan.json`, default
      50 for `enterprise`, 150 for `commercial`, else the segment's
-     `default_capacity`, else 50. It is tunable live in the sidebar ("Top N for
-     the Kolmogorov-Smirnov distance").
+     `default_capacity`, else 50. It is tunable live in the Top N sidebar.
    - **Kolmogorov-Smirnov distance, all accounts.** Is the rep's mix as strong
      as their peers'? The same distance over whole books. It ignores book size,
      so a rep with 30 accounts and one with 300 can both read 0. Small books
@@ -770,24 +767,13 @@ Tell them how to work it, in this order:
 
    (Book-balance itself — the coefficient-of-variation across reps — still drives
    the Moves tab and the mover, it's just no longer the Overview's headline.)
-2. **Calibrate** (the left sidebar) — the two dials, each in its own box:
-   - **where the line between segments sits**, on the boundary metric
-   - **target accounts per rep, per segment**
-
-   Both preview live as you type — how many accounts land each side of the line,
-   and how many seats the capacity actually buys (`reps × cap`), including a
-   blunt *"N cannot be held"* when the segment has more accounts than seats.
-   **Committing a field** (leaving it or pressing Enter) re-runs the same four
-   phases the CLI runs and rewrites `territory-plan.json`, so the plan file always
-   matches what is on screen — there is no separate Apply button. The user's
-   accept / reject / manual decisions are always preserved (only the pipeline's own
-   suggestions are re-derived); a full reset is `suggest_moves.py --reset` from the
-   CLI.
-
-   A third box, **Strong-account cutoff**, sets how many top accounts (by ICP
-   score) count as "strong" for the *strong-but-idle* and *strong-but-unallocated*
-   attention flags. Unlike the two dials above it updates the flags **live** — it
-   doesn't touch the mover, so there's no Apply.
+2. **Top N** (the left sidebar) — one input per segment: how many of each
+   rep's best accounts the top-N distance and Activity compare. Updates the
+   tables live. The segment line (`boundary.thresholds`), target accounts per
+   rep (`default_capacity`) and the strong-account cutoff (`strong_cutoff`) are
+   not in the app: change them in `spec.json` and re-run the pipeline. Re-running
+   keeps the user's accept / reject / manual decisions; `suggest_moves.py
+   --reset` starts over.
 3. **Review suggested moves** — the primary call to action. On **Overview** it's a
    full-width button below the two matrices showing the pending count; clicking it
    lands on Accounts with the queue filtered. On **Accounts** the filters are two
@@ -816,9 +802,9 @@ Tell them how to work it, in this order:
    account). `actions.csv` is the hand-off to the CRM. **This app never writes to
    your CRM.**
 
-Point them at the Calibrate panel for anything that looks off: a segment routing
-nothing usually means capacity, and a rep with implausible misfits usually means
-the boundary. Re-running `suggest_moves.py` from the CLI does the same thing and
+For anything that looks off: a segment routing nothing usually means capacity
+(`default_capacity` in `spec.json`), and a rep with implausible misfits usually
+means the boundary (`boundary.thresholds` in `spec.json`). Re-running `suggest_moves.py` from the CLI does the same thing and
 refines around decisions already made; `--reset` starts over.
 
 **Close with the privacy note**: activity is counts and dates only, per owning

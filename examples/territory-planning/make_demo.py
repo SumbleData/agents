@@ -25,8 +25,7 @@ ENTERPRISE_MIN = 150  # sales_people >= this -> Enterprise
 COMPANY = {"name": "Northwind", "url": "northwind.example", "folder_slug": "northwind"}
 COMPANY_DOMAIN = "northwind.example"
 
-# Target accounts per rep, by segment — the "Target accounts per rep" the
-# Calibrate panel shows. The quotas below are built to land every book inside
+# Target accounts per rep, by segment (each segment's default_capacity). The quotas below are built to land every book inside
 # +-40% of these, so the target is a number a reviewer can actually hold the
 # demo to. The Enterprise line sits at 150 sales people (not 500) so the
 # Enterprise pool is deep enough for 10 reps to carry ~50 accounts each.
@@ -253,7 +252,7 @@ def main() -> None:
         own_rows.append(d)
 
     # Guardrail: the whole point of the quotas. If a book drifts outside +-40%
-    # of its segment target, "Target accounts per rep" in the Calibrate panel is
+    # of its segment target, the segment's default_capacity is
     # describing something the demo data doesn't do — fail the build instead of
     # shipping it.
     books: dict[str, int] = {}

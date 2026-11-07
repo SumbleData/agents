@@ -199,15 +199,13 @@ assigning an account on the Accounts tab clears/sets its flags and updates the
 Overview immediately — the CSV columns are the exported snapshot, the UI is the
 working state.
 
-**Flags (0/1, always present)** — each is a filter chip and a highlight card:
+**Flags (0/1, always present)** — CSV columns. The app shows only two of them
+as filters and highlight cards: *Unallocated* and *Idle* (see below).
 - `unallocated` — no active rep owns it: nobody, a queue, or someone who has
   left. **A departed rep's name in the owner field is not coverage**, and this is
-  the single most common way a book looks covered but isn't. (Not shown as its own
-  highlight card — the raw count is huge and mostly weak accounts; the app surfaces
-  `strong_unallocated` instead.)
-- *Up for reallocation* (app-only, like `strong_unallocated`) — no active rep
-  owns it and it isn't a customer or whitespace: unowned, or held by a warehouse
-  owner. A highlight card and a filter chip.
+  the single most common way a book looks covered but isn't. In the app,
+  *Unallocated* is this minus customers and whitespace (unowned, or held by a
+  warehouse owner); it is the Accounts tab's default filter.
 - `double_allocated` — ≥2 active reps own records resolving to the same org
 - `segment_misfit` — the account's size segment ≠ its owner's segment
 - `worked` — the owner has ≥1 meeting, call, or **outbound** email with the
@@ -215,9 +213,9 @@ working state.
   it is counted and displayed but does not clear this flag on its own.
 - `strong_idle` — one of the **top `strong_cutoff` accounts by ICP score**
   (global, default 500), owned, and not worked: the strongest accounts nobody is
-  working. The cutoff is `strong_cutoff` in `spec.json`; the app has no control
-  for it. The `strong_unallocated` highlight (strong + unallocated) is derived from
-  the same cutoff in the app — it is not a CSV column.
+  working. The cutoff is `strong_cutoff` in `spec.json`. A CSV column only; the
+  app doesn't filter on it.
+- *Idle* (app-only) — owned and not worked. The app's second filter.
 
 `whitespace` is a valid `account_category` and is still routed by the mover, but it
 is **not** shown as an attention highlight card — a territory review is about the
@@ -785,14 +783,9 @@ Tell them how to work it, in this order:
    not in the app: change them in `spec.json` and re-run the pipeline. Re-running
    keeps the user's accept / reject / manual decisions; `suggest_moves.py
    --reset` starts over.
-3. **Review suggested moves** — the primary call to action. On **Overview** it's a
-   full-width button below the two matrices showing the pending count; clicking it
-   lands on Accounts with the queue filtered. On **Accounts** the filters are two
-   rows: a **primary row** (`All` · `✨ Suggested moves`) over a quieter
-   **secondary row** of the five attention flags. The flags are diagnostics you
-   browse; the queue is what you clear, and the layout should say so. (It used to
-   be one chip at the end of a row of six, which is where most reviewers failed to
-   find it.) The flags stay multi-select and OR together, unchanged.
+3. **Accounts filters** — one single-select row: **Unallocated** (the default),
+   **Idle**, **All**. There is no suggested-moves filter or Overview button; the
+   balancer's suggestion still shows at the top of each account's assign menu.
 4. **Fix the double-allocations first.** Two reps on one company distorts every
    other number.
 5. **Accounts** — every account, sortable, with a **Rank** column (global rank by

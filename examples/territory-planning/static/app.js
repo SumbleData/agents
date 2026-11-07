@@ -21,7 +21,7 @@ const state = {
   segLabel: {},
   repByName: {},
   tab: "overview",
-  filters: new Set(),
+  filters: new Set(["unallocated"]),  // Accounts opens on the reallocation pool
   repFilter: "",
   segmentFilter: "",
   search: "",
@@ -41,7 +41,7 @@ const state = {
 
 const PAGE_DESCRIPTIONS = {
   overview: "Each rep's book against their segment peers. Click a distance for the rep's ranked accounts, or a rep to open their accounts.",
-  accounts: "Every account. Reassign with the last column; filter by flag, rep, segment or suggested move.",
+  accounts: "Reassign any account with the last column.",
   export: "Approved changes for your CRM, or the full sheet.",
 };
 
@@ -52,18 +52,10 @@ const PAGE_DESCRIPTIONS = {
 // these cards would report the whole book as neglected when the truth is that
 // the question is unanswerable. See hasActivityData().
 const FLAGS = [
-  { key: "not_worked",       label: "Not being worked",  test: (r) => effectiveOwner(r) && !num(r.worked), cls: "flag-warn", needsActivity: true,
-    help: "Owned, with no meeting, call, email or Slack post in the window." },
-  { key: "strong_idle",      label: "Strong but idle",   test: (r) => isStrong(r) && effectiveOwner(r) && !num(r.worked), cls: "flag-bad", needsActivity: true,
-    help: "A top account by score, owned, and not being worked." },
-  { key: "strong_unallocated", label: "Strong but unallocated", test: (r) => isStrong(r) && !effectiveOwner(r) && !isWhitespace(r), cls: "flag-bad",
-    help: "A top account by score with no owner." },
-  { key: "segment_misfit",   label: "Wrong segment",     test: (r) => { const o = effectiveOwner(r); return !!o && !!repSegment(o) && !!r.account_segment && repSegment(o) !== r.account_segment; }, cls: "flag-warn",
-    help: "Sized for one segment, owned by a rep in another." },
-  { key: "reallocate",       label: "Up for reallocation", test: (r) => !effectiveOwner(r) && !isWhitespace(r) && r.account_category !== "customer", cls: "flag-warn",
+  { key: "unallocated", label: "Unallocated", test: (r) => !effectiveOwner(r) && !isWhitespace(r) && r.account_category !== "customer", cls: "flag-warn",
     help: "No active rep owns it: unowned, or held by a warehouse owner." },
-  { key: "double_allocated", label: "Double-allocated",  test: (r) => num(r.double_allocated), cls: "flag-bad",
-    help: "Two reps own records for the same company. Fix these first." },
+  { key: "idle", label: "Idle", test: (r) => effectiveOwner(r) && !num(r.worked), cls: "flag-warn", needsActivity: true,
+    help: "Owned, with no meeting, call, email or Slack post in the window." },
 ];
 
 const REASON_LABELS = {
@@ -149,48 +141,6 @@ function flagPills(r) {
     .map((f) => `<span class="flag-pill ${f.cls}">${esc(f.label)}</span>`).join(" ");
 }
 
-/** The one thing this app is asking you to DO: work the balancer's proposed
- *  moves. A full-width button below the two matrices and above the flag cards —
- *  the flags are diagnostics you browse, this is a queue you clear. It always
- *  reads as "go do this" and always lands on Accounts with the queue filtered;
- *  the on/off toggle lives there, as the primary filter, so this button has no
- *  state of its own to reflect. */
-function movesCtaHtml() {
-  // No activity => the mover deliberately proposes nothing (see
-  // territory_lib.suggest_moves). Explain that rather than showing the usual
-  // "books are balanced" empty state, which would be a flat lie.
-  if (!hasActivityData()) {
-    return `<div class="moves-cta empty">Move suggestions are off because no activity
-      data is loaded. The balancer never moves an account a rep is actively working —
-      with no meetings, calls or emails to check, that protection can't apply, so
-      proposing moves could hand away a live deal. Load activity sources and re-run
-      to turn suggestions on.</div>`;
-  }
-  const n = state.rows.filter((r) => r.proposal_status === "suggested").length;
-  if (!n) {
-    return `<div class="moves-cta empty">No suggested moves.</div>`;
-  }
-  return `<button class="moves-cta" type="button">
-    <span class="moves-cta-count">${fmt(n)}</span>
-    <span class="moves-cta-text">
-      <strong>Review suggested moves</strong>
-      <span class="moves-cta-sub">Accept or dismiss each one.</span>
-    </span>
-    <span class="moves-cta-arrow">→</span>
-  </button>`;
-}
-
-function wireMovesCta(root) {
-  const btn = root.querySelector(".moves-cta");
-  if (!btn || btn.tagName !== "BUTTON") return;
-  btn.onclick = () => {
-    state.filters = new Set(["suggested"]);
-    state.repFilter = "";
-    state.segmentFilter = "";
-    state.page = 0;
-    switchTab("accounts");
-  };
-}
 
 /** The Overview is one book-strength table per segment (two
  *  Kolmogorov-Smirnov distances + Activity per rep, coloured by column)
@@ -310,9 +260,6 @@ function renderOverview() {
       switchTab("accounts");
     };
   });
-
-  $("#overview-moves-cta").innerHTML = movesCtaHtml();
-  wireMovesCta($("#overview-moves-cta"));
 
   $("#highlight-cards").innerHTML = activeFlags().map((f) => {
     const n = state.rows.filter(f.test).length;
@@ -726,9 +673,7 @@ function filteredRows() {
   return state.rows.filter((r) => {
     if (state.filters.size) {
       const preds = [...state.filters].map((key) =>
-        key === "suggested"
-          ? (row) => row.proposal_status === "suggested"
-          : (FLAGS.find((f) => f.key === key)?.test || (() => false)));
+        FLAGS.find((f) => f.key === key)?.test || (() => false));
       if (!preds.some((p) => p(r))) return false;
     }
     if (state.repFilter && r.owner !== state.repFilter && r.proposed_owner !== state.repFilter) return false;
@@ -797,41 +742,17 @@ function assignCell(r) {
 }
 
 function renderAccounts() {
-  // Two rows. The primary row is the choice this page is actually for — the
-  // whole book, or the balancer's queue. The five flags are diagnostics you
-  // reach for second, so they sit in a quieter row underneath rather than
-  // competing with the queue in one undifferentiated strip of seven chips.
-  const suggested = state.rows.filter((r) => r.proposal_status === "suggested").length;
-  const moveOn = state.filters.has("suggested");
-  $("#account-filters").innerHTML =
-    `<div class="filter-row filter-row-primary">` +
-    `<button class="filter-primary ${state.filters.size ? "" : "active"}" data-flag=""
-       title="Every account in the plan.">All
-       <span class="cat-count">${fmt(state.rows.length)}</span></button>` +
-    `<button class="filter-primary filter-primary-move ${moveOn ? "active" : ""}
-       ${suggested ? "" : "empty"}" data-flag="suggested"
-       title="${suggested
-      ? "Accounts the balancer would hand to a different rep — accept or dismiss each one in the last column."
-      : "Nothing to review: the books are balanced under the current settings."}">
-       ✨ Suggested moves
-       <span class="cat-count">${fmt(suggested)}</span></button>` +
-    `</div>` +
-    `<div class="filter-row filter-row-secondary">` +
-    `<span class="filter-label">Also</span>` +
-    activeFlags().map((f) => {
-      const n = state.rows.filter(f.test).length;
-      return `<button class="cat-chip ${state.filters.has(f.key) ? "active" : ""}"
-        data-flag="${f.key}" title="${esc(f.help)}">${esc(f.label)}
-        <span class="cat-count">${fmt(n)}</span></button>`;
-    }).join("") +
-    `</div>`;
+  // One single-select row: Unallocated (the default), Idle, All.
+  const chip = (key, label, n, help) =>
+    `<button class="cat-chip ${(key ? state.filters.has(key) : !state.filters.size) ? "active" : ""}"
+      data-flag="${key}" title="${esc(help)}">${esc(label)}
+      <span class="cat-count">${fmt(n)}</span></button>`;
+  $("#account-filters").innerHTML = `<div class="filter-row">` +
+    activeFlags().map((f) => chip(f.key, f.label, state.rows.filter(f.test).length, f.help)).join("") +
+    chip("", "All", state.rows.length, "Every account.") + `</div>`;
   $$("#account-filters [data-flag]").forEach((el) => {
     el.onclick = () => {
-      if (el.classList.contains("empty")) return;  // nothing behind it to show
-      const key = el.dataset.flag;
-      if (!key) state.filters = new Set();
-      else if (state.filters.has(key)) state.filters.delete(key);
-      else state.filters.add(key);
+      state.filters = el.dataset.flag ? new Set([el.dataset.flag]) : new Set();
       state.page = 0;
       render();
     };

@@ -60,6 +60,8 @@ const FLAGS = [
     help: "A top account by score with no owner." },
   { key: "segment_misfit",   label: "Wrong segment",     test: (r) => { const o = effectiveOwner(r); return !!o && !!repSegment(o) && !!r.account_segment && repSegment(o) !== r.account_segment; }, cls: "flag-warn",
     help: "Sized for one segment, owned by a rep in another." },
+  { key: "reallocate",       label: "Up for reallocation", test: (r) => !effectiveOwner(r) && !isWhitespace(r) && r.account_category !== "customer", cls: "flag-warn",
+    help: "No active rep owns it: unowned, or held by a warehouse owner." },
   { key: "double_allocated", label: "Double-allocated",  test: (r) => num(r.double_allocated), cls: "flag-bad",
     help: "Two reps own records for the same company. Fix these first." },
 ];
@@ -876,7 +878,8 @@ function renderAccounts() {
       <td class="num">${fmt(r.size_metric)}</td>
       <td class="num">${fmt(r.score, 1)}</td>
       <td>${esc(r.owner || "—")}${num(r.double_allocated)
-        ? `<span class="cell-sub">also: ${esc(r.other_owners)}</span>` : ""}</td>
+        ? `<span class="cell-sub">also: ${esc(r.other_owners)}</span>` : ""}${!r.owner && r.held_by
+        ? `<span class="cell-sub">held by ${esc(r.held_by.split("|").join(", "))}</span>` : ""}</td>
       <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out · ${num(r.messages)} Slack messages">
         ${acts ? fmt(acts) : `<span class="zero">0</span>`}</td>
       <td>${flagPills(r)}</td>

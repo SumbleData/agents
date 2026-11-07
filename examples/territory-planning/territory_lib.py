@@ -124,7 +124,7 @@ def effective_capacity(
 TERRITORY_COLUMNS = [
     "org_id", "name", "domain", "crm_account_id", "account_category",
     "score", "score_source", "size_metric", "size_metric_name",
-    "account_segment", "owner", "owner_email", "rep_segment",
+    "account_segment", "owner", "owner_email", "held_by", "rep_segment",
     "unallocated", "double_allocated", "other_owners", "segment_misfit",
     "worked", "strong_idle",
     "meetings", "calls", "emails_out", "emails_in", "messages",

@@ -187,6 +187,9 @@ company; no amount of name matching would have found it.
 - `owner`, `owner_email`, `rep_segment` — the *canonical* owner when several
   reps own records for the same org: whoever has the most activity (ties
   alphabetical)
+- `held_by` (str, pipe-joined) — when no active rep owns the account, whose name
+  is on it in the CRM: a warehouse owner, a queue, or someone who left. Blank
+  otherwise.
 - `other_owners` (str, pipe-joined) — the other claimants
 
 These 0/1 flag columns are the CSV baseline (computed at merge time against the
@@ -202,6 +205,9 @@ working state.
   the single most common way a book looks covered but isn't. (Not shown as its own
   highlight card — the raw count is huge and mostly weak accounts; the app surfaces
   `strong_unallocated` instead.)
+- *Up for reallocation* (app-only, like `strong_unallocated`) — no active rep
+  owns it and it isn't a customer or whitespace: unowned, or held by a warehouse
+  owner. A highlight card and a filter chip.
 - `double_allocated` — ≥2 active reps own records resolving to the same org
 - `segment_misfit` — the account's size segment ≠ its owner's segment
 - `worked` — the owner has ≥1 meeting, call, or **outbound** email with the
@@ -479,6 +485,11 @@ seller**:
   Ask directly: *"Is anyone on this list no longer with the company?"* Their
   accounts should surface as unallocated, which is exactly what a territory
   review is for.
+- **warehouse owners** — a manager, founder or other non-seller whose name sits
+  on a pile of accounts nobody is working. Ask directly: *"Is anyone holding
+  accounts as a warehouse rather than working them?"* (Often a sales leader or a founder.)
+  Their accounts are unallocated, keep the holder's name in `held_by`, and show
+  under *Up for reallocation*.
 
 Set `is_rep=0` for each of those. Loop on the user's corrections until accepted.
 

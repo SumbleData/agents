@@ -244,6 +244,10 @@ def main() -> None:
             "account_segment": account_segment,
             "owner": chosen,
             "owner_email": chosen_email,
+            # Whose name is on an account no active rep owns: a warehouse owner,
+            # a queue, or someone who left. Blank when a rep owns it.
+            "held_by": "" if chosen else "|".join(
+                sorted({o["owner"] for o in owners if o["owner"]})),
             "rep_segment": rep_segment,
             "unallocated": 0 if is_whitespace else unallocated,
             "double_allocated": 1 if len(distinct) > 1 else 0,

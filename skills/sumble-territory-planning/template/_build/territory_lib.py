@@ -61,12 +61,13 @@ MIN_ACCOUNTS_FOR_SEGMENT_GUESS = 3
 # size — the failure mode that makes "# of DevOps engineers" a bad boundary.
 MAX_ZERO_FRACTION_BELOW = 0.30
 
-ACTIVITY_KINDS = ("meeting", "call", "email_out", "email_in")
+# `message` is a post in a shared Slack channel with the account (Slack Connect).
+ACTIVITY_KINDS = ("meeting", "call", "email_out", "email_in", "message")
 
 # Activity that counts as the rep actually working the account. Inbound email
 # alone is the prospect doing the work, so it is tracked but does not clear the
 # "not being worked" flag on its own.
-OUTBOUND_KINDS = ("meeting", "call", "email_out")
+OUTBOUND_KINDS = ("meeting", "call", "email_out", "message")
 
 # Categories included in book-balance maths. Customers are excluded by default:
 # a rep is not "overloaded" because they own renewals, and moving a customer
@@ -83,11 +84,6 @@ DEFAULT_WHITESPACE_TOP_N = 50
 # per-segment — "the strongest accounts nobody is working" is a book-wide
 # question. Adjustable live in the app; this is the default / CSV baseline.
 DEFAULT_STRONG_CUTOFF = 500
-
-# Weight the TOP DECILE of a segment gets, relative to the rest of the top
-# quartile (=1), in the Overview's Activation metric. 2 = a top-decile
-# account counts double. Purely a display metric, computed in the app.
-DEFAULT_TIER_DECILE_WEIGHT = 2
 
 
 def rep_in_balance(rep: dict[str, Any]) -> bool:
@@ -128,10 +124,10 @@ def effective_capacity(
 TERRITORY_COLUMNS = [
     "org_id", "name", "domain", "crm_account_id", "account_category",
     "score", "score_source", "size_metric", "size_metric_name",
-    "account_segment", "owner", "owner_email", "rep_segment",
+    "account_segment", "owner", "owner_email", "held_by", "rep_segment",
     "unallocated", "double_allocated", "other_owners", "segment_misfit",
     "worked", "strong_idle",
-    "meetings", "calls", "emails_out", "emails_in",
+    "meetings", "calls", "emails_out", "emails_in", "messages",
     "last_activity_date", "activity_sources",
     "pipeline_value", "sumble_url",
     "proposed_owner", "proposal_reason", "proposal_status",
@@ -554,20 +550,56 @@ def ks_signed(book: list[float], peers: list[float]) -> tuple[float, float]:
     return round(best, 4), ks_pvalue(best_abs, n, m)
 
 
+# How many of each rep's best accounts the Kolmogorov-Smirnov distance compares,
+# by segment key. Roughly the book a rep in that segment can work. Segments not
+# listed fall back to their default_capacity, then to KS_TOP_N_FALLBACK. Mirrored
+# by KS_TOP_N_DEFAULTS in static/app.js; tunable live in the app's sidebar.
+KS_TOP_N_DEFAULTS = {"enterprise": 50, "commercial": 150}
+KS_TOP_N_FALLBACK = 50
+
+
+def ks_top_n_for(segment: dict[str, Any]) -> int:
+    """The default top N for one plan segment: its own `ks_top_n`, else the
+    per-key default, else its default_capacity, else KS_TOP_N_FALLBACK."""
+    own = to_int(segment.get("ks_top_n"))
+    if own > 0:
+        return own
+    key = str(segment.get("key") or "")
+    if key in KS_TOP_N_DEFAULTS:
+        return KS_TOP_N_DEFAULTS[key]
+    return to_int(segment.get("default_capacity")) or KS_TOP_N_FALLBACK
+
+
+def top_n_scores(book: list[float], n: int) -> list[float]:
+    """A rep's best `n` scores, strongest first. A book with fewer than `n`
+    accounts is padded with empty slots scoring 0, so a thin book reads weaker
+    than a full one of the same mix: fewer accounts means fewer chances."""
+    best = sorted(book, reverse=True)[:n]
+    return best + [0.0] * (n - len(best))
+
+
 def ks_by_segment(
     rows: list[dict[str, Any]],
     reps: list[dict[str, Any]],
     owner_field: str = "owner",
+    top_n: dict[str, int] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
-    """segment -> rep -> {ks, p, n, n_peers} for every rep with an in-segment
-    book. Mirrors ksForRep() in static/app.js.
+    """segment -> rep -> {ks, p, n, top_n, n_peers} for every rep with an
+    in-segment book. Mirrors ksForRep() in static/app.js. With no `top_n`
+    the distance compares whole books; the Overview shows both readings.
 
     A rep's book is the accounts they own whose size puts them in the rep's
     own segment (whitespace excluded) — the same in-segment book the Overview
-    ranks. Peers are the other reps in that segment who count toward balance;
-    a player-coach (in_balance=0) still gets a reading but never sets the norm
+    ranks. With `top_n`, the distance compares the rep's best `top_n[segment]` accounts with
+    each peer's best `top_n[segment]`, pooled; short books are padded with empty
+    slots scoring 0 (see top_n_scores). So book size counts, accounts past N
+    don't, and every rep in a segment is read on the same number of slots.
+    Peers are the other reps in that segment who count toward balance; a
+    player-coach (in_balance=0) still gets a reading but never sets the norm
     for anyone else.
     """
+    whole_book = top_n is None
+    top_n = top_n or {}
     seg_of = {str(r.get("name") or ""): str(r.get("segment") or "") for r in reps
               if truthy(r.get("is_rep", "1"))}
     in_bal = {str(r.get("name") or ""): rep_in_balance(r) for r in reps}
@@ -581,16 +613,26 @@ def ks_by_segment(
             continue
         books.setdefault(owner, []).append(to_float(row.get("score")))
 
+    def n_for(seg: str) -> int:
+        return top_n.get(seg) or ks_top_n_for({"key": seg})
+
     out: dict[str, dict[str, dict[str, Any]]] = {}
     for rep, book in sorted(books.items()):
         seg = seg_of[rep]
+        n = None if whole_book else n_for(seg)
+
+        def pick(scores: list[float], n: int | None = n) -> list[float]:
+            return scores if n is None else top_n_scores(scores, n)
+
         peers = [
             s for other, ob in books.items()
             if other != rep and seg_of.get(other) == seg and in_bal.get(other, True)
-            for s in ob
+            for s in pick(ob)
         ]
-        d, p = ks_signed(book, peers)
-        out.setdefault(seg, {})[rep] = {"ks": d, "p": p, "n": len(book), "n_peers": len(peers)}
+        d, p = ks_signed(pick(book), peers)
+        out.setdefault(seg, {})[rep] = {
+            "ks": d, "p": p, "n": len(book), "top_n": n, "n_peers": len(peers),
+        }
     return out
 
 
@@ -655,22 +697,35 @@ def load_activity(
     return out
 
 
+ACTIVITY_ATTRIBUTIONS = ("owner", "anyone")
+
+
 def activity_for(
     activity: dict[tuple[str, str], dict[str, Any]],
     rep_email: str,
     domains: Iterable[str],
+    attribution: str = "owner",
 ) -> dict[str, Any]:
-    """Sum one rep's activity across every domain an account is known by (a CRM
-    duplicate or a Sumble-matched url can give the same org two domains)."""
+    """Sum activity on an account across every domain it is known by (a CRM
+    duplicate or a Sumble-matched url can give the same org two domains).
+
+    `attribution="owner"` counts only `rep_email`'s own events. `"anyone"`
+    counts every event from anyone at the seller, so an account a CSM or
+    engineer is working reads as worked even when its owner hasn't touched it.
+    """
     totals: dict[str, Any] = {k: 0 for k in ACTIVITY_KINDS}
     totals["last_activity_date"] = ""
     sources: set[str] = set()
     rep = norm_email(rep_email)
-    if rep:
-        for dom in {norm_domain(d) for d in domains if d}:
-            bucket = activity.get((rep, dom))
-            if not bucket:
-                continue
+    doms = {norm_domain(d) for d in domains if d}
+    if attribution == "anyone":
+        buckets = [b for (_, dom), b in activity.items() if dom in doms]
+    elif rep:
+        buckets = [activity[(rep, dom)] for dom in doms if (rep, dom) in activity]
+    else:
+        buckets = []
+    if buckets:
+        for bucket in buckets:
             for k in ACTIVITY_KINDS:
                 totals[k] += int(bucket.get(k, 0))
             sources |= set(bucket.get("sources") or ())
@@ -915,6 +970,7 @@ def has_activity(rows: list[dict[str, Any]]) -> bool:
         + to_float(r.get("calls"))
         + to_float(r.get("emails_out"))
         + to_float(r.get("emails_in"))
+        + to_float(r.get("messages"))
         > 0
         for r in rows
     )

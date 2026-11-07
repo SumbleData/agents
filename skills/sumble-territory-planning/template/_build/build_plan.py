@@ -111,6 +111,9 @@ def main() -> None:
                     if str(s.get("default_capacity") or "").strip()
                     else None
                 ),
+                # How many of each rep's best accounts the Kolmogorov-Smirnov
+                # distance compares. Tunable live in the app's sidebar.
+                "ks_top_n": tl.ks_top_n_for(s),
             }
             for i, s in enumerate(segments)
         ],
@@ -131,6 +134,9 @@ def main() -> None:
             # Optional end of the window (YYYY-MM-DD). Unset means today; a fixed
             # date replays a snapshot, such as the public demo's synthetic calendar.
             "as_of": str(activity.get("as_of") or ""),
+            # Whose events mark an account worked: the owner's own ("owner",
+            # the default) or anyone at the seller ("anyone").
+            "attribution": str(activity.get("attribution") or "owner"),
             "company_domain": company_domain,
             "freemail_excludes": sorted(tl.FREEMAIL_DOMAINS),
         },
@@ -150,9 +156,6 @@ def main() -> None:
         },
         "strong_cutoff": tl.to_int(
             spec.get("strong_cutoff"), tl.DEFAULT_STRONG_CUTOFF
-        ),
-        "tier_decile_weight": tl.to_int(
-            spec.get("tier_decile_weight"), tl.DEFAULT_TIER_DECILE_WEIGHT
         ),
         "territory_csv": "territory.csv",
     }

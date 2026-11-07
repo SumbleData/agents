@@ -1,9 +1,9 @@
 # Territory Planning — demo
 
 A public, self-contained demo of the [`sumble-territory-planning`](../../skills/sumble-territory-planning)
-skill's app: per-segment **book-strength heatmaps** (KS distance vs peers and
-Activation; click a KS value to see that rep's accounts ranked), a live **Calibrate**
-sidebar (segment boundary, per-rep capacity, strong-account cutoff), a
+skill's app: a **book-strength table per segment** (Kolmogorov-Smirnov distance vs peers on
+each rep's top N and on all accounts, each with an Activity share; click a distance to see that rep's accounts ranked), a **Top N**
+sidebar, a
 granular **Accounts** tab where you assign any account to anyone, and a
 suggest → accept/reject → **Export** flow.
 
@@ -27,16 +27,16 @@ python3 app.py          # http://localhost:8002
 - **Books are sized to target.** Every rep is dealt a fixed quota, so all 20
   books land within **±40%** of their segment's target (Enterprise 50, so
   30–70; Commercial 150, so 90–210). `make_demo.py` fails the build if one
-  drifts outside that band — otherwise "Target accounts per rep" in the
-  Calibrate panel would be describing something the data doesn't do.
+  drifts outside that band — otherwise the segment's target book size
+  (`default_capacity`) would describe something the data doesn't do.
 
 The seeded numbers tell a story on purpose: one enterprise rep (*Tom Harris*)
 holds the segment's biggest and strongest book but works almost none of it
-(**KS +0.32, 4% Activation**, sitting on value); the
-foil (*James Walker*) works their top tier to **100%**; one ramping rep
-(*Grace Mitchell*) sits at **0%**; and the commercial star (*Alex Morgan*) both
-captures and activates the most in that segment. So the heatmaps, the
-KS/Activation columns, the attention flags, and the Calibrate/Moves flows
+(**Kolmogorov-Smirnov distance +0.66 on their top 50, 12% Activity**, sitting on value); the
+foil (*James Walker*) has activity on every account (**100%**); one ramping rep
+(*Grace Mitchell*) sits at **0%** with a thin book that reads weak on top N; and the commercial star (*Alex Morgan*) both
+captures and activates the most in that segment. So the per-segment tables, the
+Kolmogorov-Smirnov distance and Activity columns, the attention flags, and the Calibrate/Moves flows
 all have something to show.
 
 ## Rebuild from source

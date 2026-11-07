@@ -125,8 +125,9 @@ to the lowest-`order` segment.
   $25M, $50M…), or to a multiple of 5 on a score, so the rule is one a sales
   leader can state out loud. A 40-account sample does not support "1,043
   employees".
-- **`KS_SIGNIFICANCE = 0.05`** — a rep's KS reading with a higher p-value is
-  shown greyed in the app and tagged "within noise" in the merge output.
+- **`KS_SIGNIFICANCE = 0.05`** — a Kolmogorov-Smirnov reading with a higher
+  p-value is shown greyed in the app and tagged "within noise" in the merge
+  output.
 - **`FREEMAIL_DOMAINS`** — dropped before activity matching, along with the
   seller's own domain, so internal meetings and personal mail never mark an
   account "worked".
@@ -160,18 +161,27 @@ no error signal, so it snaps to nearest.
 accounts in a segment, the metric doesn't separate the reps' books, and the
 calibrator says so.
 
-## Book quality: the KS column
+## Book strength: the Kolmogorov-Smirnov distances
 
-The Overview's headline column is a signed two-sample Kolmogorov-Smirnov
-distance per rep (`territory_lib.ks_by_segment`, mirrored by `ksForRep()` in
-`static/app.js`; keep them in step). The rep's in-segment account scores are
-compared with the pooled scores of every other in-balance rep in the segment.
-The magnitude is the widest gap between the two cumulative distributions; the
-sign is `+` when the rep's book sits higher on score. KS only sees order, so it
-reads the same on score or on in-segment rank, and it ignores book size: it
-answers "is this rep's mix as good as everyone else's?" while the In-seg
-column answers "how much do they have?". The p-value is the asymptotic
-Kolmogorov distribution with Stephens' correction.
+The Overview shows one table per segment with two signed two-sample
+Kolmogorov-Smirnov distances per rep (`territory_lib.ks_by_segment`, mirrored by
+`ksForRep()` in `static/app.js`; keep them in step). The rep's in-segment
+account scores are compared with the pooled scores of every other in-balance rep
+in the segment. The magnitude is the widest gap between the two cumulative
+distributions; the sign is `+` when the rep's side sits higher on score. The
+p-value is the asymptotic Kolmogorov distribution with Stephens' correction.
+
+- **Top N** (`top_n={segment: N}`, the default sort). Each rep contributes their
+  best N scores (`top_n_scores`); a book shorter than N is padded with empty
+  slots scoring 0. Book size counts, accounts past N don't, and every rep is
+  read on the same N slots, so the noise is equal across the segment. N comes
+  from `ks_top_n` on the plan segment (`ks_top_n_for`: per-key defaults in
+  `KS_TOP_N_DEFAULTS`, enterprise 50 and commercial 150, else
+  `default_capacity`, else `KS_TOP_N_FALLBACK`). The app's sidebar overrides it
+  live.
+- **All accounts** (no `top_n`). Whole books: it compares the mix and ignores
+  book size, so it answers "is this rep's mix as good?" while top N answers
+  "do they have as much good opportunity?".
 
 ## Double allocation
 

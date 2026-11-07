@@ -119,8 +119,8 @@ def main() -> None:
         )
         print(
             f"[moves] NOTE: unowned accounts left unassigned because every rep is at "
-            f"capacity — {detail}. Raise the segment's default_capacity (in the app's "
-            "Calibrate panel, or territory-plan.json) to route more."
+            f"capacity — {detail}. Raise the segment's default_capacity (in spec.json, "
+            "then re-run the pipeline) to route more."
         )
 
 

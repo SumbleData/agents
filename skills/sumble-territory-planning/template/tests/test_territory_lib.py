@@ -73,7 +73,7 @@ class KsBySegmentTest(unittest.TestCase):
         rows = [self.row("A", s) for s in (10, 20, 30)]
         rows += [self.row("B", s) for s in (10, 20, 30)]
         rows += [self.row("Coach", s) for s in (90, 95, 99)]
-        out = tl.ks_by_segment(rows, self.reps)["ent"]
+        out = tl.ks_by_segment(rows, self.reps, top_n={"ent": 3})["ent"]
         self.assertEqual(out["A"]["ks"], 0.0)  # the coach's strong book is not in A's peers
         self.assertEqual(out["A"]["n_peers"], 3)
         self.assertEqual(out["Coach"]["ks"], 1.0)
@@ -85,8 +85,65 @@ class KsBySegmentTest(unittest.TestCase):
             self.row("A", 99, seg="com"),
             self.row("A", 99, cat="whitespace"),
         ]
-        out = tl.ks_by_segment(rows, self.reps)["ent"]
+        out = tl.ks_by_segment(rows, self.reps, top_n={"ent": 1})["ent"]
         self.assertEqual(out["A"]["n"], 1)
+
+    def test_accounts_past_top_n_do_not_count(self):
+        # A and B share the same best two; A's extra weak accounts sit past N.
+        rows = [self.row("A", s) for s in (80, 70, 5, 5, 5)]
+        rows += [self.row("B", s) for s in (80, 70)]
+        out = tl.ks_by_segment(rows, self.reps, top_n={"ent": 2})["ent"]
+        self.assertEqual(out["A"]["ks"], 0.0)
+        self.assertEqual(out["A"]["n"], 5)
+        self.assertEqual(out["A"]["top_n"], 2)
+
+    def test_a_thin_book_reads_weaker_than_a_full_one_of_the_same_mix(self):
+        rows = [self.row("A", s) for s in (60, 60)]
+        rows += [self.row("B", s) for s in (60, 60, 60, 60)]
+        out = tl.ks_by_segment(rows, self.reps, top_n={"ent": 4})["ent"]
+        self.assertEqual(out["A"]["ks"], -0.5)  # two empty slots score 0
+        self.assertEqual(out["B"]["ks"], 0.5)
+
+
+    def test_without_top_n_whole_books_are_compared(self):
+        rows = [self.row("A", s) for s in (60, 60)]
+        rows += [self.row("B", s) for s in (60, 60, 60, 60)]
+        out = tl.ks_by_segment(rows, self.reps)["ent"]
+        self.assertEqual(out["A"]["ks"], 0.0)  # same mix, size ignored
+        self.assertIsNone(out["A"]["top_n"])
+
+
+class KsTopNDefaultTest(unittest.TestCase):
+    def test_defaults_by_segment(self):
+        self.assertEqual(tl.ks_top_n_for({"key": "enterprise"}), 50)
+        self.assertEqual(tl.ks_top_n_for({"key": "commercial"}), 150)
+        self.assertEqual(tl.ks_top_n_for({"key": "mid", "default_capacity": 80}), 80)
+        self.assertEqual(tl.ks_top_n_for({"key": "mid"}), tl.KS_TOP_N_FALLBACK)
+        self.assertEqual(tl.ks_top_n_for({"key": "enterprise", "ks_top_n": 30}), 30)
+
+    def test_top_n_scores_pads_and_truncates(self):
+        self.assertEqual(tl.top_n_scores([3, 9, 1], 2), [9, 3])
+        self.assertEqual(tl.top_n_scores([3], 3), [3, 0.0, 0.0])
+
+
+class ActivityAttributionTest(unittest.TestCase):
+    def setUp(self):
+        self.activity = {
+            ("owner@x.com", "acme.com"): {"meeting": 0, "call": 0, "email_out": 0,
+                "email_in": 0, "message": 0, "last_activity_date": "", "sources": set()},
+            ("csm@x.com", "acme.com"): {"meeting": 1, "call": 0, "email_out": 0,
+                "email_in": 0, "message": 3, "last_activity_date": "2026-11-01",
+                "sources": {"slack"}},
+        }
+
+    def test_owner_attribution_ignores_colleagues(self):
+        act = tl.activity_for(self.activity, "owner@x.com", ["acme.com"])
+        self.assertEqual(act["outbound_total"], 0)
+
+    def test_anyone_attribution_counts_colleagues_and_slack(self):
+        act = tl.activity_for(self.activity, "owner@x.com", ["acme.com"], "anyone")
+        self.assertEqual(act["outbound_total"], 4)  # one meeting + three Slack messages
+        self.assertEqual(act["last_activity_date"], "2026-11-01")
 
 
 class BoundaryMetricTest(unittest.TestCase):

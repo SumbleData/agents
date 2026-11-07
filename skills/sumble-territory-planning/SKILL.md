@@ -746,9 +746,11 @@ Tell them how to work it, in this order:
      **Clicking either distance opens the rep's ranking** in the side panel:
      both readings, their in-segment accounts strongest first with segment rank,
      score and worked status (with a divider where their top N ends), and a
-     chart for the clicked reading: the share of each side scoring at least each
-     score, with the widest gap marked. Clicking the rep's name still jumps to
-     the Accounts tab.
+     chart for the clicked reading on in-segment rank: the share of each side in
+     the segment's top x, with the widest gap marked. The distance is computed on
+     score, but it only sees order, so rank gives the same number; rank just
+     reads more naturally ("60% of their top 50 are in the segment's top 200").
+     Clicking the rep's name still jumps to the Accounts tab.
 
      Rough reading guide for users: under 0.1 is even, 0.1–0.25 is worth a
      look, above 0.25 is a real difference. `merge_territory.py` prints both

@@ -426,6 +426,20 @@ function showRepRanking(repName, segKey, mode = "top") {
   const kTop = ksForRep(book, grp, topN);
   const kAll = ksForRep(book, grp, null);
   const k = mode === "all" ? kAll : kTop;   // the column clicked drives the chart
+  // The chart works on in-segment rank (1 = best). Same order as score, so the
+  // gap it draws is the distance in the table. A top-N slot the rep can't fill
+  // gets rank Infinity: it never counts as being in the segment's top x.
+  const rankList = (bk) => {
+    const best = [...bk].sort((a, c) => num(c.score) - num(a.score));
+    const sel = mode === "all" ? best : best.slice(0, topN);
+    const rs = sel.map((r) => ranks[r.org_id] || Infinity);
+    if (mode === "all") return rs;
+    return rs.concat(Array(Math.max(0, topN - rs.length)).fill(Infinity));
+  };
+  const mineR = rankList(book);
+  const peerR = grp.books
+    .filter((b) => b.rep.name !== repName && b.rep.in_balance !== false)
+    .flatMap((b) => rankList(b.book));
   const segLabel = state.segLabel[segKey] || segKey;
   const signed = (x) => (x.ks > 0 ? "+" : x.ks < 0 ? "−" : "") + Math.abs(x.ks).toFixed(2);
   const pv = (x) => (x.p < 0.001 ? "p < 0.001" : `p = ${x.p.toFixed(3)}`);
@@ -458,7 +472,7 @@ function showRepRanking(repName, segKey, mode = "top") {
   $("#detail-body").innerHTML = `
     <div class="detail-section">
       <p>${esc(verdict)}</p>
-      ${k.n_peers ? ksChartHtml(k.mine, k) : ""}
+      ${k.n_peers ? ksChartHtml(mineR, peerR, k.top_n) : ""}
     </div>
     <div class="detail-section">
       <h3>Accounts, strongest first</h3>
@@ -478,57 +492,63 @@ function showRepRanking(repName, segKey, mode = "top") {
     $("#detail-panel").classList.add("hidden");
     switchTab("accounts");
   };
-  wireKsChart(k.mine, k);
+  if (k.n_peers) wireKsChart(mineR, peerR);
   $("#detail-panel").classList.remove("hidden");
 }
 
-/** Share of `vals` scoring at least `x`. */
-function shareAtLeast(sortedVals, x) {
-  let lo = 0, hi = sortedVals.length;            // first index with value >= x
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (sortedVals[mid] < x) lo = mid + 1; else hi = mid; }
-  return (sortedVals.length - lo) / sortedVals.length;
+/** Share of `sortedRanks` at rank `x` or better (1 = best). */
+function shareWithin(sortedRanks, x) {
+  let lo = 0, hi = sortedRanks.length;           // first index with rank > x
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedRanks[mid] <= x) lo = mid + 1; else hi = mid;
+  }
+  return lo / sortedRanks.length;
 }
 
 const KS_CHART = { w: 360, h: 210, l: 38, r: 10, t: 12, b: 34 };
 
-/** The chart's x range: the real scores only, so empty slots (score 0) don't
- *  squash the axis. */
-function ksChartRange(bookScores, peers) {
-  const real = [...bookScores, ...peers].filter((v) => v > 0);
-  if (!real.length) return [0, 1];
-  return [Math.min(...real), Math.max(...real)];
+/** x range: rank 1 to the worst real rank on either side. */
+function ksRankRange(mine, peers) {
+  const real = [...mine, ...peers].filter(Number.isFinite);
+  return [1, real.length ? Math.max(...real) : 1];
 }
 
-/** Two step lines: for each score on the x axis, the share of the book (and of
- *  the peers' pooled book) scoring at least that much. The widest vertical gap
- *  is the KS distance, marked with a dashed rule. */
-function ksChartHtml(bookScores, k) {
+/** Where the two cumulative lines are furthest apart, and how far. */
+function rankGap(ms, ps) {
+  let best = { x: 1, d: 0 };
+  for (const x of new Set([...ms, ...ps].filter(Number.isFinite))) {
+    const d = shareWithin(ms, x) - shareWithin(ps, x);
+    if (Math.abs(d) > Math.abs(best.d)) best = { x, d };
+  }
+  return best;
+}
+
+/** Two step lines: for each rank x, the share of this rep's accounts (and of
+ *  their peers', pooled) in the segment's top x. The widest vertical gap is
+ *  the Kolmogorov-Smirnov distance, marked with a dashed rule. */
+function ksChartHtml(mine, peers, topN) {
   const { w, h, l, r, t, b } = KS_CHART;
-  const [lo, hi] = ksChartRange(bookScores, k.peers);
+  const [lo, hi] = ksRankRange(mine, peers);
   const span = hi - lo || 1;
   const X = (v) => l + ((v - lo) / span) * (w - l - r);
   const Y = (p) => t + (1 - p) * (h - t - b);
-  const steps = (vals) => {
-    const s = [...vals].sort((a, c) => a - c);
-    const xs = [...new Set(s)];
-    // Starts below 100% when empty slots (score 0) sit left of the axis.
-    let d = `M${X(lo).toFixed(1)},${Y(shareAtLeast(s, lo)).toFixed(1)}`;
-    for (const x of xs) {
-      if (x < lo) continue;
-      const after = shareAtLeast(s, x + 1e-9);   // share strictly above x
-      d += ` H${X(x).toFixed(1)} V${Y(after).toFixed(1)}`;
+  const ms = [...mine].sort((a, c) => a - c);
+  const ps = [...peers].sort((a, c) => a - c);
+  const steps = (s) => {
+    let d = `M${X(lo).toFixed(1)},${Y(0).toFixed(1)}`;
+    for (const x of new Set(s.filter(Number.isFinite))) {
+      d += ` H${X(x).toFixed(1)} V${Y(shareWithin(s, x)).toFixed(1)}`;
     }
     return d + ` H${X(hi).toFixed(1)}`;
   };
-  const bs = [...bookScores].sort((a, c) => a - c);
-  const ps = [...k.peers].sort((a, c) => a - c);
-  // At the gap score, both "share above" values; their difference is |KS|.
-  const gx = k.at ?? lo;
-  const yRep = shareAtLeast(bs, gx + 1e-9), yPeer = shareAtLeast(ps, gx + 1e-9);
+  const gap = rankGap(ms, ps);
+  const gx = gap.x;
+  const yRep = shareWithin(ms, gx), yPeer = shareWithin(ps, gx);
   const ticks = [0, 0.5, 1].map((p) =>
     `<line x1="${l}" x2="${w - r}" y1="${Y(p)}" y2="${Y(p)}" class="ks-grid"/>` +
     `<text x="${l - 6}" y="${Y(p) + 4}" class="ks-axis" text-anchor="end">${p * 100}%</text>`).join("");
-  const xt = [lo, (lo + hi) / 2, hi].map((v) =>
+  const xt = [lo, Math.round((lo + hi) / 2), hi].map((v) =>
     `<text x="${X(v)}" y="${h - b + 16}" class="ks-axis" text-anchor="middle">${fmt(v, 0)}</text>`).join("");
   const labelY = (y, other) => Y(y) + (y >= other ? -6 : 14);
   return `
@@ -538,12 +558,13 @@ function ksChartHtml(bookScores, k) {
     </div>
     <div class="ks-chart-wrap">
       <svg id="ks-chart" viewBox="0 0 ${w} ${h}" role="img"
-        aria-label="Share of book scoring at least each score, this rep against peers">
+        aria-label="Share of accounts in the segment's top x, this rep against peers">
         ${ticks}${xt}
-        <text x="${(l + w - r) / 2}" y="${h - 4}" class="ks-axis" text-anchor="middle">Account score</text>
+        <text x="${(l + w - r) / 2}" y="${h - 4}" class="ks-axis"
+          text-anchor="middle">Segment rank (1 = best)</text>
         <line x1="${X(gx)}" x2="${X(gx)}" y1="${Y(yRep)}" y2="${Y(yPeer)}" class="ks-gap"/>
-        <path d="${steps(k.peers)}" class="ks-line ks-line-peer"/>
-        <path d="${steps(bookScores)}" class="ks-line ks-line-rep"/>
+        <path d="${steps(ps)}" class="ks-line ks-line-peer"/>
+        <path d="${steps(ms)}" class="ks-line ks-line-rep"/>
         <text x="${X(gx) + 5}" y="${labelY(yRep, yPeer)}" class="ks-label">This rep ${fmt(yRep * 100)}%</text>
         <text x="${X(gx) + 5}" y="${labelY(yPeer, yRep)}" class="ks-label">Peers ${fmt(yPeer * 100)}%</text>
         <line id="ks-cross" class="ks-cross" y1="${t}" y2="${h - b}" x1="-10" x2="-10"/>
@@ -551,27 +572,28 @@ function ksChartHtml(bookScores, k) {
       </svg>
       <div id="ks-tip" class="ks-tip hidden"></div>
     </div>
-    <p class="eval-diag-sub">Share of each side scoring at least x. The dashed line
+    <p class="eval-diag-sub">Share of each side in the segment's top x${topN
+      ? `; empty slots in a top ${fmt(topN)} never count` : ""}. The dashed line
       is the widest gap: the distance.</p>`;
 }
 
-/** Crosshair + tooltip on the KS chart: at the hovered score, the share of this
- *  rep's book and of their peers' scoring at least that much. */
-function wireKsChart(bookScores, k) {
+/** Crosshair + tooltip: at the hovered rank, the share of each side in the
+ *  segment's top x. */
+function wireKsChart(mine, peers) {
   const svg = $("#ks-chart"), hit = $("#ks-hit"), tip = $("#ks-tip"), cross = $("#ks-cross");
   if (!svg || !hit) return;
   const { w, l, r } = KS_CHART;
-  const [lo, hi] = ksChartRange(bookScores, k.peers);
+  const [lo, hi] = ksRankRange(mine, peers);
   const span = hi - lo || 1;
-  const bs = [...bookScores].sort((a, c) => a - c);
-  const ps = [...k.peers].sort((a, c) => a - c);
+  const ms = [...mine].sort((a, c) => a - c);
+  const ps = [...peers].sort((a, c) => a - c);
   hit.onmousemove = (e) => {
     const box = svg.getBoundingClientRect();
     const sx = ((e.clientX - box.left) / box.width) * w;
-    const score = lo + ((sx - l) / (w - l - r)) * span;
+    const x = Math.max(lo, Math.round(lo + ((sx - l) / (w - l - r)) * span));
     cross.setAttribute("x1", sx); cross.setAttribute("x2", sx);
-    tip.innerHTML = `Score ≥ <strong>${fmt(score, 1)}</strong><br>` +
-      `This rep ${fmt(shareAtLeast(bs, score) * 100)}% · Peers ${fmt(shareAtLeast(ps, score) * 100)}%`;
+    tip.innerHTML = `Top <strong>${fmt(x)}</strong><br>` +
+      `This rep ${fmt(shareWithin(ms, x) * 100)}% · Peers ${fmt(shareWithin(ps, x) * 100)}%`;
     tip.style.left = `${e.clientX - box.left + 10}px`;
     tip.style.top = `${e.clientY - box.top - 10}px`;
     tip.classList.remove("hidden");

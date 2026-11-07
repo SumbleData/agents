@@ -707,6 +707,11 @@ Tell them how to work it, in this order:
    Kolmogorov-Smirnov distances, each followed by its **Activity** column when
    activity is loaded: distance top N, Activity top N, distance all accounts,
    Activity all accounts.
+   The last row, pinned below the reps, is **Unallocated**: the segment's
+   unowned accounts read as if they were one more book, against the reps' books.
+   It is never a rep's peer, so rep readings don't move. A positive top-N
+   distance means the pool's best accounts beat the reps' best, so strong
+   accounts are sitting unowned; clicking the row opens the Unallocated filter.
    The table sorts by the top-N distance by default. There is deliberately no
    average-rank depth column: an earlier "average segment rank of the top 25"
    column confused RevOps users more than it helped.

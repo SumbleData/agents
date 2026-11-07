@@ -217,14 +217,13 @@ function renderOverview() {
   for (const seg of shown) {
     const grp = {
       key: seg.key, label: seg.label, size: sizes[seg.key] || 0,
-      books: state.reps.filter((r) => r.segment === seg.key).map((rep) => ({
-        rep, book: inSegmentBook(rep.name, seg.key),
-      })),
+      books: segmentBooks(seg.key),
     };
     const n = state.ksTopN[seg.key] || KS_TOP_N_FALLBACK;
     parts.push(
       `<h3 class="terr-h3">${esc(seg.label)} <span class="terr-sub">` +
-      `${fmt(grp.books.length)} reps · ranked within ${fmt(grp.size)} accounts</span></h3>`);
+      `${fmt(grp.books.filter((b) => !b.rep.pool).length)} reps · ` +
+      `ranked within ${fmt(grp.size)} accounts</span></h3>`);
     parts.push(renderMatrix(grp, [
       ksMetric("top", n), ...(hasAct ? [activityMetric("top", n)] : []),
       ksMetric("all", n), ...(hasAct ? [activityMetric("all", n)] : []),
@@ -255,7 +254,9 @@ function renderOverview() {
   });
   $$("#overview-segments tr.rep-row").forEach((tr) => {
     tr.onclick = () => {
-      state.repFilter = tr.dataset.rep; state.filters = new Set();
+      const isPool = tr.dataset.rep === POOL.name;
+      state.repFilter = isPool ? "" : tr.dataset.rep;
+      state.filters = isPool ? new Set(["unallocated"]) : new Set();
       state.segmentFilter = ""; state.page = 0;
       switchTab("accounts");
     };
@@ -312,6 +313,29 @@ function inSegmentBook(repName, segKey) {
     .filter((r) => effectiveOwner(r) === repName && r.account_segment === segKey &&
       !WHITESPACE_CATS.has(r.account_category))
     .sort((a, b) => num(b.score) - num(a.score));
+}
+
+/** The Unallocated pool, read like one more book in each segment's table. It
+ *  is never anyone's peer (in_balance false), so rep readings don't change. */
+const POOL = { name: "Unallocated", in_balance: false, pool: true };
+const UNALLOCATED_TEST = (r) =>
+  !effectiveOwner(r) && !isWhitespace(r) && r.account_category !== "customer";
+
+function poolBook(segKey) {
+  return state.rows
+    .filter((r) => r.account_segment === segKey && UNALLOCATED_TEST(r))
+    .sort((a, b) => num(b.score) - num(a.score));
+}
+
+function bookFor(name, segKey) {
+  return name === POOL.name ? poolBook(segKey) : inSegmentBook(name, segKey);
+}
+
+/** Every rep's book in a segment, plus the Unallocated pool last. */
+function segmentBooks(segKey) {
+  return state.reps.filter((r) => r.segment === segKey)
+    .map((rep) => ({ rep, book: inSegmentBook(rep.name, segKey) }))
+    .concat([{ rep: POOL, book: poolBook(segKey) }]);
 }
 
 /** Conditional-formatting background for a value relative to the other values IN
@@ -416,12 +440,8 @@ function divergingStyleAttr(val, maxAbs) {
  *  their score distribution against their peers' so the gap is visible. */
 function showRepRanking(repName, segKey, mode = "top") {
   const { ranks, sizes } = segmentRanks();
-  const book = inSegmentBook(repName, segKey);
-  const grp = {
-    key: segKey,
-    books: state.reps.filter((r) => r.segment === segKey)
-      .map((rep) => ({ rep, book: rep.name === repName ? book : inSegmentBook(rep.name, segKey) })),
-  };
+  const grp = { key: segKey, books: segmentBooks(segKey) };
+  const book = grp.books.find((b) => b.rep.name === repName)?.book || bookFor(repName, segKey);
   const topN = state.ksTopN[segKey] || KS_TOP_N_FALLBACK;
   const kTop = ksForRep(book, grp, topN);
   const kAll = ksForRep(book, grp, null);
@@ -472,7 +492,7 @@ function showRepRanking(repName, segKey, mode = "top") {
   $("#detail-body").innerHTML = `
     <div class="detail-section">
       <p>${esc(verdict)}</p>
-      ${k.n_peers ? ksChartHtml(mineR, peerR, k.top_n) : ""}
+      ${k.n_peers ? ksChartHtml(mineR, peerR, k.top_n, repName === POOL.name ? POOL.name : "This rep") : ""}
     </div>
     <div class="detail-section">
       <h3>Accounts, strongest first</h3>
@@ -487,12 +507,13 @@ function showRepRanking(repName, segKey, mode = "top") {
   $$("#detail-body tr.ks-acct").forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.id); });
   $("#ks-open-accounts").onclick = (e) => {
     e.preventDefault();
-    state.repFilter = repName; state.segmentFilter = segKey;
-    state.filters = new Set(); state.page = 0;
+    const isPool = repName === POOL.name;
+    state.repFilter = isPool ? "" : repName; state.segmentFilter = segKey;
+    state.filters = isPool ? new Set(["unallocated"]) : new Set(); state.page = 0;
     $("#detail-panel").classList.add("hidden");
     switchTab("accounts");
   };
-  if (k.n_peers) wireKsChart(mineR, peerR);
+  if (k.n_peers) wireKsChart(mineR, peerR, repName === POOL.name ? POOL.name : "This rep");
   $("#detail-panel").classList.remove("hidden");
 }
 
@@ -527,7 +548,7 @@ function rankGap(ms, ps) {
 /** Two step lines: for each rank x, the share of this rep's accounts (and of
  *  their peers', pooled) in the segment's top x. The widest vertical gap is
  *  the Kolmogorov-Smirnov distance, marked with a dashed rule. */
-function ksChartHtml(mine, peers, topN) {
+function ksChartHtml(mine, peers, topN, who = "This rep") {
   const { w, h, l, r, t, b } = KS_CHART;
   const [lo, hi] = ksRankRange(mine, peers);
   const span = hi - lo || 1;
@@ -553,7 +574,7 @@ function ksChartHtml(mine, peers, topN) {
   const labelY = (y, other) => Y(y) + (y >= other ? -6 : 14);
   return `
     <div class="ks-legend">
-      <span><i class="ks-swatch ks-swatch-rep"></i>This rep</span>
+      <span><i class="ks-swatch ks-swatch-rep"></i>${esc(who)}</span>
       <span><i class="ks-swatch ks-swatch-peer"></i>Peers (pooled)</span>
     </div>
     <div class="ks-chart-wrap">
@@ -565,7 +586,7 @@ function ksChartHtml(mine, peers, topN) {
         <line x1="${X(gx)}" x2="${X(gx)}" y1="${Y(yRep)}" y2="${Y(yPeer)}" class="ks-gap"/>
         <path d="${steps(ps)}" class="ks-line ks-line-peer"/>
         <path d="${steps(ms)}" class="ks-line ks-line-rep"/>
-        <text x="${X(gx) + 5}" y="${labelY(yRep, yPeer)}" class="ks-label">This rep ${fmt(yRep * 100)}%</text>
+        <text x="${X(gx) + 5}" y="${labelY(yRep, yPeer)}" class="ks-label">${esc(who)} ${fmt(yRep * 100)}%</text>
         <text x="${X(gx) + 5}" y="${labelY(yPeer, yRep)}" class="ks-label">Peers ${fmt(yPeer * 100)}%</text>
         <line id="ks-cross" class="ks-cross" y1="${t}" y2="${h - b}" x1="-10" x2="-10"/>
         <rect id="ks-hit" x="${l}" y="${t}" width="${w - l - r}" height="${h - t - b}" fill="transparent"/>
@@ -579,7 +600,7 @@ function ksChartHtml(mine, peers, topN) {
 
 /** Crosshair + tooltip: at the hovered rank, the share of each side in the
  *  segment's top x. */
-function wireKsChart(mine, peers) {
+function wireKsChart(mine, peers, who = "This rep") {
   const svg = $("#ks-chart"), hit = $("#ks-hit"), tip = $("#ks-tip"), cross = $("#ks-cross");
   if (!svg || !hit) return;
   const { w, l, r } = KS_CHART;
@@ -593,7 +614,7 @@ function wireKsChart(mine, peers) {
     const x = Math.max(lo, Math.round(lo + ((sx - l) / (w - l - r)) * span));
     cross.setAttribute("x1", sx); cross.setAttribute("x2", sx);
     tip.innerHTML = `Top <strong>${fmt(x)}</strong><br>` +
-      `This rep ${fmt(shareWithin(ms, x) * 100)}% · Peers ${fmt(shareWithin(ps, x) * 100)}%`;
+      `${esc(who)} ${fmt(shareWithin(ms, x) * 100)}% · Peers ${fmt(shareWithin(ps, x) * 100)}%`;
     tip.style.left = `${e.clientX - box.left + 10}px`;
     tip.style.top = `${e.clientY - box.top - 10}px`;
     tip.classList.remove("hidden");
@@ -654,6 +675,8 @@ function renderMatrix(grp, metrics, sort) {
     if (av > bv) return sort.dir;
     return a.rep.name.localeCompare(b.rep.name);
   });
+  // The Unallocated pool always sits last, under the reps it's compared with.
+  rows.sort((a, b) => (a.rep.pool ? 1 : 0) - (b.rep.pool ? 1 : 0));
 
   const head = `<tr>${columns.map((c) => {
     const active = sort.key === c.key;
@@ -683,7 +706,8 @@ function renderMatrix(grp, metrics, sort) {
       const tip = cell.muted ? ` title="Could be chance: p ≥ ${KS_SIGNIFICANCE}"` : "";
       return `<td class="num ${c.cls || ""}${extra}"${bg}${data}${tip}>${c.fmt(v)}</td>`;
     }).join("");
-    return `<tr class="rep-row" data-rep="${esc(rep.name)}">${cells}</tr>`;
+    return `<tr class="rep-row${rep.pool ? " pool-row" : ""}" data-rep="${esc(rep.name)}"` +
+      `${rep.pool ? ` title="Unowned accounts, compared with the reps' books"` : ""}>${cells}</tr>`;
   }).join("");
 
   return `<div class="table-wrap"><table class="matrix-table">

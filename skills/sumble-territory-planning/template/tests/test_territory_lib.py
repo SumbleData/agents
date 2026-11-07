@@ -126,6 +126,26 @@ class KsTopNDefaultTest(unittest.TestCase):
         self.assertEqual(tl.top_n_scores([3], 3), [3, 0.0, 0.0])
 
 
+class ActivityAttributionTest(unittest.TestCase):
+    def setUp(self):
+        self.activity = {
+            ("owner@x.com", "acme.com"): {"meeting": 0, "call": 0, "email_out": 0,
+                "email_in": 0, "message": 0, "last_activity_date": "", "sources": set()},
+            ("csm@x.com", "acme.com"): {"meeting": 1, "call": 0, "email_out": 0,
+                "email_in": 0, "message": 3, "last_activity_date": "2026-11-01",
+                "sources": {"slack"}},
+        }
+
+    def test_owner_attribution_ignores_colleagues(self):
+        act = tl.activity_for(self.activity, "owner@x.com", ["acme.com"])
+        self.assertEqual(act["outbound_total"], 0)
+
+    def test_anyone_attribution_counts_colleagues_and_slack(self):
+        act = tl.activity_for(self.activity, "owner@x.com", ["acme.com"], "anyone")
+        self.assertEqual(act["outbound_total"], 4)  # one meeting + three Slack messages
+        self.assertEqual(act["last_activity_date"], "2026-11-01")
+
+
 class BoundaryMetricTest(unittest.TestCase):
     def test_score_metric_reads_the_score_column(self):
         spec = {"boundary": {"metric": "score"}}

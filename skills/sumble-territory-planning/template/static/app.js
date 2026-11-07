@@ -91,7 +91,8 @@ let _hasActivity = null;
 function hasActivityData() {
   if (_hasActivity === null) {
     _hasActivity = state.rows.some(
-      (r) => num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.emails_in) > 0
+      (r) => num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.emails_in) +
+        num(r.messages) > 0
     );
   }
   return _hasActivity;
@@ -1086,7 +1087,7 @@ function renderAccounts() {
   const slice = rows.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
 
   $("#accounts-table tbody").innerHTML = slice.map((r) => {
-    const acts = num(r.meetings) + num(r.calls) + num(r.emails_out);
+    const acts = num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.messages);
     return `<tr data-id="${esc(r.org_id)}">
       <td class="num">${accountRank(r) ? fmt(accountRank(r)) : "—"}</td>
       <td>${r.sumble_url
@@ -1097,7 +1098,7 @@ function renderAccounts() {
       <td class="num">${fmt(r.score, 1)}</td>
       <td>${esc(r.owner || "—")}${num(r.double_allocated)
         ? `<span class="cell-sub">also: ${esc(r.other_owners)}</span>` : ""}</td>
-      <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out">
+      <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out · ${num(r.messages)} Slack messages">
         ${acts ? fmt(acts) : `<span class="zero">0</span>`}</td>
       <td>${flagPills(r)}</td>
       <td class="assign-cell">${assignCell(r)}</td>
@@ -1178,6 +1179,7 @@ function showDetail(orgId) {
   const acts = [
     ["Meetings", r.meetings], ["Calls", r.calls],
     ["Emails out", r.emails_out], ["Emails in", r.emails_in],
+    ["Slack messages", r.messages],
   ];
   const total = acts.reduce((a, [, v]) => a + num(v), 0);
   // Reassign from ANY account, not only rows the balancer proposed. Same

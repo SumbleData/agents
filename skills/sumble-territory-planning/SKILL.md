@@ -591,6 +591,11 @@ Write these into `{output_root}/_raw/` with your file tools:
   `enterprise`, 150 for `commercial`, else `default_capacity`). `activity.as_of`
   is optional too: a YYYY-MM-DD end for the window, for replaying an old pull;
   unset means today.
+  `activity.attribution` is `owner` (default: only the account owner's own
+  events mark it worked) or `anyone` (any colleague's meeting, call, email or
+  Slack post counts, so an account a CSM or engineer is working reads as worked).
+  Ask the user which they want; pull activity for everyone at the company when
+  it is `anyone`.
 - **`ownership.csv`** — `crm_account_id,name,domain,owner,owner_email,owner_is_queue,is_customer`,
   plus a `revenue` (or `crm:{column}`) column when that is the boundary metric
 - **`reps.csv`** — `name,email,segment,is_rep,capacity,in_balance`
@@ -599,7 +604,8 @@ Write these into `{output_root}/_raw/` with your file tools:
   - `in_balance` — blank/`1` normally; `0` for a **player-coach** whose book
     should be visible but neither measured for fairness nor moved off.
 - **`activity/{source}.csv`** — one file per source:
-  `source,rep_email,account_domain,kind,ts` (`kind` ∈ `meeting|call|email_out|email_in`)
+  `source,rep_email,account_domain,kind,ts` (`kind` ∈ `meeting|call|email_out|email_in|message`;
+  `message` is a post by someone at the seller in a Slack Connect channel shared with the account)
 - **`accounts.csv`** (Path B only) — `crm_account_id,name,domain`
 - **`pipeline.csv`** (optional) — `domain,pipeline_value`
 

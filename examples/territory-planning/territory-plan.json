@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-06T13:28:46-08:00",
+  "generated_at": "2026-11-07T07:06:14-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -226,6 +226,7 @@
       "google_calendar"
     ],
     "as_of": "2026-07-31",
+    "attribution": "owner",
     "company_domain": "northwind.example",
     "freemail_excludes": [
       "163.com",

@@ -61,12 +61,13 @@ MIN_ACCOUNTS_FOR_SEGMENT_GUESS = 3
 # size — the failure mode that makes "# of DevOps engineers" a bad boundary.
 MAX_ZERO_FRACTION_BELOW = 0.30
 
-ACTIVITY_KINDS = ("meeting", "call", "email_out", "email_in")
+# `message` is a post in a shared Slack channel with the account (Slack Connect).
+ACTIVITY_KINDS = ("meeting", "call", "email_out", "email_in", "message")
 
 # Activity that counts as the rep actually working the account. Inbound email
 # alone is the prospect doing the work, so it is tracked but does not clear the
 # "not being worked" flag on its own.
-OUTBOUND_KINDS = ("meeting", "call", "email_out")
+OUTBOUND_KINDS = ("meeting", "call", "email_out", "message")
 
 # Categories included in book-balance maths. Customers are excluded by default:
 # a rep is not "overloaded" because they own renewals, and moving a customer
@@ -126,7 +127,7 @@ TERRITORY_COLUMNS = [
     "account_segment", "owner", "owner_email", "rep_segment",
     "unallocated", "double_allocated", "other_owners", "segment_misfit",
     "worked", "strong_idle",
-    "meetings", "calls", "emails_out", "emails_in",
+    "meetings", "calls", "emails_out", "emails_in", "messages",
     "last_activity_date", "activity_sources",
     "pipeline_value", "sumble_url",
     "proposed_owner", "proposal_reason", "proposal_status",
@@ -696,22 +697,35 @@ def load_activity(
     return out
 
 
+ACTIVITY_ATTRIBUTIONS = ("owner", "anyone")
+
+
 def activity_for(
     activity: dict[tuple[str, str], dict[str, Any]],
     rep_email: str,
     domains: Iterable[str],
+    attribution: str = "owner",
 ) -> dict[str, Any]:
-    """Sum one rep's activity across every domain an account is known by (a CRM
-    duplicate or a Sumble-matched url can give the same org two domains)."""
+    """Sum activity on an account across every domain it is known by (a CRM
+    duplicate or a Sumble-matched url can give the same org two domains).
+
+    `attribution="owner"` counts only `rep_email`'s own events. `"anyone"`
+    counts every event from anyone at the seller, so an account a CSM or
+    engineer is working reads as worked even when its owner hasn't touched it.
+    """
     totals: dict[str, Any] = {k: 0 for k in ACTIVITY_KINDS}
     totals["last_activity_date"] = ""
     sources: set[str] = set()
     rep = norm_email(rep_email)
-    if rep:
-        for dom in {norm_domain(d) for d in domains if d}:
-            bucket = activity.get((rep, dom))
-            if not bucket:
-                continue
+    doms = {norm_domain(d) for d in domains if d}
+    if attribution == "anyone":
+        buckets = [b for (_, dom), b in activity.items() if dom in doms]
+    elif rep:
+        buckets = [activity[(rep, dom)] for dom in doms if (rep, dom) in activity]
+    else:
+        buckets = []
+    if buckets:
+        for bucket in buckets:
             for k in ACTIVITY_KINDS:
                 totals[k] += int(bucket.get(k, 0))
             sources |= set(bucket.get("sources") or ())
@@ -956,6 +970,7 @@ def has_activity(rows: list[dict[str, Any]]) -> bool:
         + to_float(r.get("calls"))
         + to_float(r.get("emails_out"))
         + to_float(r.get("emails_in"))
+        + to_float(r.get("messages"))
         > 0
         for r in rows
     )

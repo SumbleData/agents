@@ -134,6 +134,9 @@ def main() -> None:
             # Optional end of the window (YYYY-MM-DD). Unset means today; a fixed
             # date replays a snapshot, such as the public demo's synthetic calendar.
             "as_of": str(activity.get("as_of") or ""),
+            # Whose events mark an account worked: the owner's own ("owner",
+            # the default) or anyone at the seller ("anyone").
+            "attribution": str(activity.get("attribution") or "owner"),
             "company_domain": company_domain,
             "freemail_excludes": sorted(tl.FREEMAIL_DOMAINS),
         },

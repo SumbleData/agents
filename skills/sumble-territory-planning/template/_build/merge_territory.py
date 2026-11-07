@@ -176,6 +176,9 @@ def main() -> None:
 
     # --- 3. activity + pipeline ----------------------------------------------
     act_cfg = plan.get("activity") or {}
+    attribution = str(act_cfg.get("attribution") or "owner")
+    if attribution not in tl.ACTIVITY_ATTRIBUTIONS:
+        sys.exit(f"[merge] activity.attribution must be one of {tl.ACTIVITY_ATTRIBUTIONS}")
     window = tl.to_int(act_cfg.get("window_days"), 90) or 90
     activity = tl.load_activity(raw, window, tl.parse_date(act_cfg.get("as_of")))
     pipeline = {
@@ -205,14 +208,14 @@ def main() -> None:
         for owner in distinct:
             email = next((o["owner_email"] for o in real if o["owner"] == owner), "") or \
                 active_reps.get(owner, {}).get("email", "")
-            act = tl.activity_for(activity, email, domains)
+            act = tl.activity_for(activity, email, domains)  # owner's own, to pick one
             total = int(act["outbound_total"]) + int(act["email_in"])
             if total > best_activity:
                 chosen, chosen_email, best_activity = owner, email, total
 
         rep = active_reps.get(chosen, {})
         rep_segment = str(rep.get("segment") or "")
-        act = tl.activity_for(activity, chosen_email, domains)
+        act = tl.activity_for(activity, chosen_email, domains, attribution)
 
         category = rec["account_category"]
         if not category or category not in CATEGORY_RANK:
@@ -252,6 +255,7 @@ def main() -> None:
             "calls": act["call"],
             "emails_out": act["email_out"],
             "emails_in": act["email_in"],
+            "messages": act["message"],
             "last_activity_date": act["last_activity_date"],
             "activity_sources": act["activity_sources"],
             "pipeline_value": next(

@@ -258,6 +258,13 @@ misfit phase, since a deliberately odd-shaped book is not evidence of a mistake.
 Reach for this instead of `is_rep=0` when the accounts really are being worked:
 `is_rep=0` would dump the whole book into `unallocated` and route it away.
 
+**A new hire who hasn't started yet** gets a `reps.csv` row with `is_rep=1`
+and `in_balance=0`, even though they own nothing in the CRM. They then appear
+on the Overview with an empty book (the distances read "—") and in every Owner
+dropdown, so the user can hand them accounts by hand. `in_balance=0` keeps the
+mover from filling their empty book on its own. Switch it to `1` once they're
+ramped and should be judged with the rest.
+
 ### How moves are proposed
 
 `suggest_moves.py`, four phases, least disruptive first — **take the free wins
@@ -610,6 +617,8 @@ Write these into `{output_root}/_raw/` with your file tools:
     for a genuine exception.
   - `in_balance` — blank/`1` normally; `0` for a **player-coach** whose book
     should be visible but neither measured for fairness nor moved off.
+    Also `0` for a new hire with no accounts yet, so only manual moves fill
+    their book.
 - **`activity/{source}.csv`** — one file per source:
   `source,rep_email,account_domain,kind,ts` (`kind` ∈ `meeting|call|email_out|email_in|message`;
   `message` is a post by someone at the seller in a Slack Connect channel shared with the account)

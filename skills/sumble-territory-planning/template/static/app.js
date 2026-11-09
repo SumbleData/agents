@@ -192,6 +192,8 @@ function renderOverview() {
       : `The rep's whole book against their peers' books. Ignores book size. ` +
         `Click for the ranked accounts.`,
     value: (book, grp) => {
+      // An empty book (a new hire) has nothing to compare: blank, not -1.
+      if (!book.length) return null;
       const k = ksForRep(book, grp, mode === "top" ? n : null);
       return k.n_peers ? { v: k.ks, muted: k.p >= KS_SIGNIFICANCE } : null;
     },
@@ -791,7 +793,7 @@ function renderRep() {
     ? `<a href="#" class="rep-ks" data-mode="${mode}">${label} ${signed(k)}</a>` : "";
   $("#rep-meta").innerHTML = `${fmt(book.length)} accounts` +
     (isPool ? "" : ` · ${esc(segLabel)}`) +
-    (kTop.n_peers ? ` · Kolmogorov-Smirnov distance: ${reading(kTop, "top", `top ${fmt(topN)}`)}, ` +
+    (kTop.n_peers && segBook.length ? ` · Kolmogorov-Smirnov distance: ${reading(kTop, "top", `top ${fmt(topN)}`)}, ` +
       `${reading(kAll, "all", "all accounts")}` : "");
   $$("#rep-meta .rep-ks").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); showRepRanking(v.name, v.segKey, a.dataset.mode); };
@@ -852,7 +854,9 @@ function renderRep() {
       <td class="assign-cell">${assignCell(r)}</td>
     </tr>`;
   }).join("") : `<tr><td colspan="${cols.length}" class="empty-state">` +
-    `${state.repMode === "idle" ? "No idle accounts." : "No accounts."}</td></tr>`;
+    `${!book.length ? "No accounts yet. Open another rep or the Unallocated row and pick " +
+      `${esc(v.name)} in the Owner column.` :
+      state.repMode === "idle" ? "No idle accounts." : "No accounts."}</td></tr>`;
   $$("#accounts-table tbody tr[data-id]").forEach((tr) => {
     tr.onclick = (e) => { if (!e.target.closest("a")) showDetail(tr.dataset.id); };
   });

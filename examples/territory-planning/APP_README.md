@@ -17,18 +17,15 @@ or `PORT=9002 python3 app.py`.
 
 ## Work it in this order
 
-1. **Overview** — is each segment balanced? Each bar is one rep's book, measured
-   as **total account score** (not account count). The **darker part of the bar
-   is the score they have actually worked** — a long light bar is a book being
-   carried, not covered. A dashed outline appears once you approve moves,
-   showing where the book lands.
-2. **Fix double-allocations first.** Two reps owning CRM records for the *same
-   company* distorts every other number, so the planner leaves those accounts
-   alone until you resolve them in your CRM.
-3. **Moves** — accept or reject each proposal. Balance bars and the balance
-   index recompute immediately. Any owner can be overridden by hand from the
-   dropdown; that records as a `manual` change.
-4. **Export** — `actions.csv` is the hand-off to your CRM.
+1. **Overview** — one table per segment: each rep's Kolmogorov-Smirnov distance
+   against their peers (on their top N and on all accounts) and their Activity.
+   The Unallocated row reads the unowned accounts the same way.
+2. **Click a rep** to see their accounts, idle ones first, and move any of them
+   with the Owner dropdown. The Unallocated row works the same way.
+3. **Fix double-allocations first.** Two reps owning CRM records for the *same
+   company* distorts every other number.
+4. **Changes** — every proposed move (suggested, approved, dismissed) and a log
+   of each decision. `actions.csv` is the hand-off to your CRM.
 
 **This app never writes to your CRM.** Decisions are saved to `territory.csv`
 as you make them; the export is the only output.

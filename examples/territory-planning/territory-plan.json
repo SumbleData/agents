@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-09T15:07:54-08:00",
+  "generated_at": "2026-11-09T15:31:45-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -35,6 +35,23 @@
       {
         "segment": "enterprise",
         "min": 150.0
+      }
+    ],
+    "options": [
+      {
+        "metric": "jf_people:Sales",
+        "label": "Sales headcount",
+        "column": "sales_people"
+      },
+      {
+        "metric": "score",
+        "label": "Account score",
+        "column": "score"
+      },
+      {
+        "metric": "total_employees",
+        "label": "Total employees",
+        "column": "employee_count_int"
       }
     ]
   },

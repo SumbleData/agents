@@ -46,6 +46,10 @@ PLAN_PATH = DATA_DIR / "territory-plan.json"
 LOG_PATH = DATA_DIR / "changes.jsonl"
 # The hash of the image's territory.csv that DATA_DIR was last seeded from.
 SEED_MARK = DATA_DIR / ".seeded_from"
+# The Segments and Team panel's last applied settings. Startup re-applies them,
+# so a pipeline re-run or a redeploy keeps what people set in the app. Delete
+# it to go back to the plan the pipeline wrote.
+CONFIG_PATH = DATA_DIR / "panel-config.json"
 
 # Statuses the UI may set. "suggested" is the pipeline's own output and is not
 # settable from the app — a user either accepts it, rejects it, or overrides the
@@ -81,8 +85,9 @@ def seed_data_dir() -> None:
                 shutil.copyfile(APP_DIR / name, DATA_DIR / name)
         SEED_MARK.write_text(stamp, encoding="utf-8")
         print(f"[seed] {DATA_DIR} ← {csv_name} from the image", file=sys.stderr)
-    if not LOG_PATH.exists() and (APP_DIR / "changes.jsonl").exists():
-        shutil.copyfile(APP_DIR / "changes.jsonl", LOG_PATH)
+    for name, dest in (("changes.jsonl", LOG_PATH), ("panel-config.json", CONFIG_PATH)):
+        if not dest.exists() and (APP_DIR / name).exists():
+            shutil.copyfile(APP_DIR / name, dest)
 
 
 class State:
@@ -108,7 +113,29 @@ class State:
             for line in LOG_PATH.read_text(encoding="utf-8").splitlines():
                 if line.strip():
                     self.log.append(json.loads(line))
+        self.reapply_config()
         self.replay_log()
+
+    def reapply_config(self) -> None:
+        """Re-apply the panel's saved settings when the plan or sheet no
+        longer reflects them (a pipeline re-run, a redeploy). A no-op when
+        they already match."""
+        if not CONFIG_PATH.exists():
+            return
+        config = tl.read_json(CONFIG_PATH)
+        before = json.dumps(self.plan, sort_keys=True)
+        owners = [(r.get("owner"), r.get("account_segment")) for r in self.rows]
+        try:
+            tl.apply_config(self.plan, self.rows, config)
+        except ValueError as e:
+            print(f"[config] could not re-apply {CONFIG_PATH.name}: {e}", file=sys.stderr)
+            return
+        after = [(r.get("owner"), r.get("account_segment")) for r in self.rows]
+        if json.dumps(self.plan, sort_keys=True) != before or after != owners:
+            tl.suggest_moves(self.plan, self.rows)
+            self.save()
+            self.save_plan()
+            print(f"[config] re-applied {CONFIG_PATH.name}", file=sys.stderr)
 
     def replay_log(self) -> None:
         """Re-apply each account's latest decision from the log.
@@ -157,68 +184,21 @@ class State:
     def save_plan(self) -> None:
         tl.write_json(PLAN_PATH, self.plan)
 
-    # -- calibration -------------------------------------------------------
+    # -- configuration -----------------------------------------------------
 
-    def calibrate(
-        self,
-        thresholds: dict[str, Any] | None,
-        capacities: dict[str, Any] | None,
-        reset: bool = False,
-    ) -> dict[str, Any]:
-        """Move the segment boundary and/or the per-segment capacity, then
-        re-derive everything downstream.
+    def configure(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Apply the Segments and Team panel: the cutoff metric, the segments
+        with their starting values and target accounts per rep, and who is a
+        rep versus who only holds accounts. Then refresh the suggestions.
 
-        This is the whole point of the app being a calibration tool rather than
-        a report: the boundary decides which segment an account is in (and so
-        what counts as a misfit), and capacity decides how many accounts a rep
-        can absorb. Both are judgement calls that only make sense to tune while
-        watching the books move.
-
-        Runs the SAME `territory_lib.suggest_moves` engine the CLI runs, so the
-        app can never drift from the pipeline. Decisions the user has already
-        made survive unless `reset` is asked for.
+        Runs the same territory_lib routines the pipeline runs, so the app
+        can't drift from it. Decisions the user already made are kept.
         """
-        segments = self.plan["segments"]
-        seg_keys = {str(s["key"]) for s in segments}
-
-        if thresholds:
-            existing = {str(t["segment"]): t for t in self.plan["boundary"]["thresholds"]}
-            for key, value in thresholds.items():
-                if str(key) not in seg_keys:
-                    raise ValueError(f"unknown segment: {key!r}")
-                if str(value).strip() == "":
-                    existing.pop(str(key), None)
-                    continue
-                val = tl.to_float(value)
-                if val < 0:
-                    raise ValueError("a segment threshold cannot be negative")
-                existing[str(key)] = {"segment": str(key), "min": val}
-            if not existing:
-                raise ValueError(
-                    "at least one segment needs a threshold, or every account "
-                    "lands in the smallest segment"
-                )
-            self.plan["boundary"]["thresholds"] = sorted(
-                existing.values(), key=lambda t: -tl.to_float(t["min"])
-            )
-
-        if capacities:
-            for key, value in capacities.items():
-                if str(key) not in seg_keys:
-                    raise ValueError(f"unknown segment: {key!r}")
-                for seg in segments:
-                    if str(seg["key"]) == str(key):
-                        blank = str(value).strip() == ""
-                        seg["default_capacity"] = None if blank else tl.to_int(value)
-            # A rep's own capacity still wins; re-resolve so the mover and the
-            # UI read the same number.
-            for rep in self.plan["reps"]:
-                rep["effective_capacity"] = tl.effective_capacity(rep, segments)
-
-        tl.recompute_segments(self.plan, self.rows)
-        report = tl.suggest_moves(self.plan, self.rows, reset=reset)
+        report = tl.apply_config(self.plan, self.rows, config)
+        report["moves"] = tl.suggest_moves(self.plan, self.rows)
         self.save()
         self.save_plan()
+        tl.write_json(CONFIG_PATH, config)
         return report
 
     def decide(
@@ -355,7 +335,8 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/plan":
             with _LOCK:
                 return self._send_json(
-                    {"plan": STATE.plan, "rows": STATE.rows, "log": STATE.log}
+                    {"plan": STATE.plan, "rows": STATE.rows, "log": STATE.log,
+                     "owners": tl.owner_counts(STATE.rows)}
                 )
         if self.path == "/api/export":
             with _LOCK:
@@ -370,7 +351,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 (stdlib name)
         if not self._require_auth():
             return
-        if self.path not in ("/api/decide", "/api/calibrate"):
+        if self.path not in ("/api/decide", "/api/config"):
             self.send_error(404, "not found")
             return
         try:
@@ -380,23 +361,20 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(400, f"bad request: {e}")
             return
 
-        if self.path == "/api/calibrate":
+        if self.path == "/api/config":
             try:
                 with _LOCK:
-                    report = STATE.calibrate(
-                        body.get("thresholds") or {},
-                        body.get("capacities") or {},
-                        reset=bool(body.get("reset")),
-                    )
+                    report = STATE.configure(body)
             except ValueError as e:
                 self.send_error(400, str(e))
                 return
             except OSError as e:
                 self.send_error(500, f"could not write the plan: {e}")
                 return
-            return self._send_json(
-                {"ok": True, "report": report, "plan": STATE.plan, "rows": STATE.rows}
-            )
+            return self._send_json({
+                "ok": True, "report": report, "plan": STATE.plan, "rows": STATE.rows,
+                "owners": tl.owner_counts(STATE.rows),
+            })
 
         try:
             with _LOCK:

@@ -92,9 +92,11 @@ def main() -> None:
     acct_rows, score_col, score_source = load_account_table(raw, plan)
     if not acct_rows:
         sys.exit("[merge] the account table is empty.")
-    size_col = tl.prepare_boundary_metric(
-        {"boundary": boundary}, acct_rows, tl.read_csv(raw / "ownership.csv")
-    )
+    ownership_rows = tl.read_csv(raw / "ownership.csv")
+    size_col = tl.prepare_boundary_metric({"boundary": boundary}, acct_rows, ownership_rows)
+    # Every metric the Segments panel may switch the cutoff to, carried per
+    # row as metric:<name> and listed in the plan.
+    options = tl.metric_options(plan, acct_rows, ownership_rows, score_col)
     if size_col not in acct_rows[0]:
         sys.exit(
             f"[merge] boundary column '{size_col}' is missing from the account table. "
@@ -122,6 +124,7 @@ def main() -> None:
                 "size_metric": tl.to_float(r.get(size_col)),
                 "sumble_url": r.get("sumble_url") or "",
                 "components": component_values(r),
+                "metrics": {o["column"]: tl.to_float(r.get(o["column"])) for o in options},
             }
             orgs[org_id] = rec
         else:
@@ -131,6 +134,9 @@ def main() -> None:
             # The breakdown follows whichever record supplies the score.
             if tl.to_float(r.get(score_col)) > rec["score"]:
                 rec["components"] = component_values(r)
+            for o in options:
+                col = o["column"]
+                rec["metrics"][col] = max(rec["metrics"][col], tl.to_float(r.get(col)))
             rec["score"] = max(rec["score"], tl.to_float(r.get(score_col)))
         if dom:
             rec["domains"].add(dom)
@@ -152,7 +158,7 @@ def main() -> None:
             by_crm_id.setdefault(cid, org_id)
 
     # --- 2. ownership ---------------------------------------------------------
-    ownership = tl.read_csv(raw / "ownership.csv")
+    ownership = ownership_rows
     owners_by_org: dict[str, list[dict]] = {}
     unresolved = 0
     customers: set[str] = set()
@@ -279,6 +285,11 @@ def main() -> None:
             "proposal_reason": "",
             "proposal_status": "",
             **rec["components"],
+            "crm_owners": "|".join(sorted({o["owner"] for o in owners if o["owner"]})),
+            **{
+                f"{tl.METRIC_PREFIX}{o['metric']}": round(rec["metrics"][o["column"]], 2)
+                for o in options
+            },
         })
 
     # account_segment / segment_misfit / strong_idle all hang off the boundary,
@@ -303,6 +314,9 @@ def main() -> None:
 
     rows.sort(key=lambda r: (-r["score"], r["org_id"]))
     tl.write_csv(out_path, rows, tl.territory_columns(rows))
+    plan["boundary"]["options"] = [{"metric": o["metric"], "label": o["label"],
+                                    "column": o["column"]} for o in options]
+    tl.write_json(plan_path, plan)
 
     # --- 5. audit -------------------------------------------------------------
     counts = {

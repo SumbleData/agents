@@ -159,7 +159,8 @@ territory_planning/{company}/
   territory.csv           one row per Sumble org: identity, score, segment,
                             owner, every flag, per-rep activity counts, proposal
   actions.csv             written by the app: approved owner changes for the CRM
-  static/                 UI: Top N sidebar, book-strength tables, accounts, move queue
+  panel-config.json       written by the app: the Segments + Team panel's settings
+  static/                 UI: Segments + Team panel, book-strength tables, rep sheet, changes
   README.md
   _raw/                   agent-written inputs + fetch responses + audit
 ```
@@ -191,6 +192,12 @@ company; no amount of name matching would have found it.
   is on it in the CRM: a warehouse owner, a queue, or someone who left. Blank
   otherwise.
 - `other_owners` (str, pipe-joined) — the other claimants
+- `crm_owners` (str, pipe-joined) — every name on the company's CRM records,
+  reps and holders alike. The Team panel re-derives `owner`, `held_by` and the
+  allocation flags from it when someone's role changes.
+- `metric:<metric>` (float, one column per cutoff option, e.g. `metric:score`,
+  `metric:total_employees`, `metric:jf_people:Sales`) — what the Segments panel
+  switches `size_metric` to when the user changes the cutoff.
 
 These 0/1 flag columns are the CSV baseline (computed at merge time against the
 canonical owner). **The app recomputes the attention flags live against the
@@ -305,6 +312,13 @@ Goal: collect the input required to produce a first territory plan. Follow these
 questions closely and do not go off script — a deterministic interview that is
 the same between runs.
 
+**The interview sets starting values, not final ones.** The app's left panel
+edits the segments, the cutoff metric and each segment's starting value, the
+target accounts per rep, and who on the team is a rep versus who only holds
+accounts. Say so once, early: *"Whatever we pick now, you can change in the
+app's left panel and see the books move."* That keeps the interview short: take
+a sensible answer and move on rather than agonising over the exact line.
+
 **Numbering rule:** the interview has **7 main questions**. Start every
 interview message with a progress marker — `**Question N of 7**` — so the user
 always knows how much remains. When you combine questions into one message,
@@ -345,16 +359,33 @@ Record as `spec.score_source`: `{"kind": "custom", "path": "…/score.csv"}` or
 
 ---
 
-**2. Segments, and what decides them.**
+**2. Segments, how many accounts each rep carries, and what decides them.**
 
-Ask both halves in ONE message.
+Ask all three in ONE message.
 
 **(a) What segments do you sell in?** Propose **Enterprise + Commercial** as the
 default; don't make them invent it. They may rename, add (SMB, Mid-Market,
-Strategic), or drop to two. Store ordered **smallest → largest** via `order`.
+Strategic), or use a single segment (one team, no split). Store ordered
+**smallest → largest** via `order`.
 
-**(b) What decides which segment an account belongs to?** Offer these options
-and record the answer as `boundary.metric`:
+**(b) How many accounts should a rep in each segment carry?** Ask per segment
+("Enterprise reps carry 50, Commercial 150"), the way sales leaders state it.
+Store it as `segments[].default_capacity`. It does two jobs, so say both: it is
+the most the mover fills a book to, and it is the **top N** the
+Kolmogorov-Smirnov distance compares: "is this rep's best 50 as strong as each
+peer's best 50" is asked of the book the rep is meant to carry. A rep's own
+`capacity` in `reps.csv` overrides it for a genuine exception (ramping,
+part-time).
+
+Ask with the arithmetic whenever the unallocated pile is large: *"there are N
+unallocated accounts and M reps in that segment, so without a target each gets
+about N/M new accounts."* Phase 2 of the mover assigns unowned accounts up to the
+target, and a book of thousands of unallocated rows with no target produces an
+`actions.csv` no rep can act on.
+
+**(c) What decides which segment an account belongs to?**
+
+Offer these options and record the answer as `boundary.metric`:
 
 | Option | `metric` | Where the value comes from |
 |---|---|---|
@@ -368,6 +399,13 @@ and record the answer as `boundary.metric`:
 The interactive question widget only fits four options, so offer the first four
 (score, total employees, job-function headcount, revenue) and let "Other" cover
 the CRM field and `score.csv` column cases.
+
+The app's panel can switch the cutoff later to any metric the account table
+carries: the account score, total employees and every `<function>_people`
+headcount column with data, revenue when `ownership.csv` has it, and anything
+listed in `boundary.options` (a list of metric strings in `spec.json`). Pull a
+second candidate now if the user is torn (revenue from the CRM, say) so the
+panel can compare them; a metric that was never pulled can't be offered.
 
 Say the consequence of each choice in one line when it matters:
 - **Score** makes the top segment "the accounts that fit best", not "the
@@ -386,7 +424,7 @@ Record a display label alongside (`boundary.label`, e.g. `"Annual revenue
 
 ---
 
-**3. Where the line sits.**
+**3. Where the line sits.** Skip it for a single segment.
 
 Ask ONE question: *"Do you have a hard-line rule for where {metric} splits
 these segments, or should I calibrate one from your data?"*
@@ -491,12 +529,18 @@ seller**:
   accounts should surface as unallocated, which is exactly what a territory
   review is for.
 - **warehouse owners** — a manager, founder or other non-seller whose name sits
-  on a pile of accounts nobody is working. Ask directly: *"Is anyone holding
-  accounts as a warehouse rather than working them?"* (Often a sales leader or a founder.)
-  Their accounts are unallocated, keep the holder's name in `held_by`, and show
-  under *Up for reallocation*.
+  on a pile of accounts nobody is working. **Always ask this one directly, as its
+  own question:** *"Does anyone hold accounts as a warehouse rather than working
+  them? Their accounts would count as unallocated, up for reallocation."* Name
+  the likely candidates from the data: the owners with the most accounts and
+  the least activity, and anyone whose title is a leader or founder. In the app
+  they show as **Holds accounts**, their accounts sit in the Unallocated row
+  with their name in *Held by*, and the Team panel can flip them back.
 
 Set `is_rep=0` for each of those. Loop on the user's corrections until accepted.
+**Keep every CRM owner in `reps.csv`**, holders included: the Team panel lists
+everyone whose name is on accounts, and a person missing from the roster can
+only be added there by name.
 
 **Watch for the player-coach — the third answer people don't know to ask for.**
 A sales leader, founder, or CS lead who owns real accounts fits neither
@@ -544,34 +588,34 @@ State the two things plainly, in the message:
   ≥1 other attendee's email domain matches an account domain → one `meeting`.
 - **Call recorders** — a recorded meeting in-window where the rep is host or
   participant AND a participant domain matches an account → one `call`.
-- **Salesforce email** — an EmailMessage (or Task with type Email) tied to the
-  account or a contact at its domain. From = rep → `email_out`; rep in To/Cc →
-  `email_in`.
+- **Salesforce email** — read BOTH places Salesforce keeps it; most orgs use
+  Tasks far more than Enhanced Email.
+  - `EmailMessage` (Enhanced Email): the rep is the sumble-side address in From
+    (out) or To/Cc (in), not `CreatedBy`, which is often an integration user.
+    The account is `RelatedToId`, else the other side's email domain.
+  - `Task` with `TaskSubtype = 'Email'` (Gmail/Outlook loggers, Nooks,
+    Outreach): usually logged against a **Lead**, so `AccountId` is blank. Get
+    the address with `TYPEOF Who WHEN Lead THEN Email WHEN Contact THEN Email
+    END` and match its domain to an account. Skip Tasks whose Id is an
+    `EmailMessage.ActivityId`: Enhanced Email made them, and they'd count twice.
+    Read direction from the subject when the logger marks it (Nooks writes
+    `[Nooks] [Email In] - …` / `[Email Out]`); unmarked Tasks are sent mail.
+  - One row per email, never one per day: a thread of ten emails is ten.
+  - Drop free-mail domains before matching: a lead at gmail.com is a person,
+    not the Gmail account.
+  - A rep with zero email in Salesforce is not logging it (their mailbox isn't
+    connected). Say so with the per-rep counts rather than reporting them idle.
 - One row per event. Do not pre-aggregate — `merge_territory.py` does the
   roll-up, so the same event never counts twice.
 
 ---
 
-**7. Optional extras.** Ask all three in ONE message:
+**7. Optional extras.** Ask both in ONE message:
 
 - **(a) Open pipeline value per account.** Often the real reason a book *feels*
   unfair. A CSV of `domain,pipeline_value`, or a sum of open opportunities.
   Shown per rep; not used to propose moves.
-- **(b) Capacity — ask for it per SEGMENT, not per rep.** "Enterprise reps carry
-  50, commercial 150" is how sales leaders actually state a cap, so store it as
-  `segments[].default_capacity` in `spec.json`; a rep's own `capacity` in
-  `reps.csv` overrides their segment's default when someone is a genuine
-  exception (ramping, part-time). `build_plan.py` resolves the two into
-  `reps[].effective_capacity`, and both the mover and the app read that.
-
-  **Ask this whenever the unallocated pile is large — it is not optional then.**
-  Phase 2 assigns EVERY unowned account, so a book with thousands of unallocated
-  rows and no cap produces an `actions.csv` of thousands of moves that no rep can
-  act on. Say so plainly, with the arithmetic: *"there are N unallocated
-  accounts and M reps in that segment — without a cap each gets about N/M new
-  accounts."* If the caps leave accounts unrouted, `suggest_moves.py` reports
-  which segments hit the ceiling rather than silently dropping them.
-- **(c) Whitespace routing depth** — only if the scoring run produced whitespace:
+- **(b) Whitespace routing depth** — only if the scoring run produced whitespace:
   how many top net-new accounts to route to owners (**default 50**). The rest are
   dropped from the sheet; territory planning is not the place to browse 10,000
   whitespace rows.
@@ -589,9 +633,9 @@ Write these into `{output_root}/_raw/` with your file tools:
     "company": {"name": "Acme", "url": "acme.com", "folder_slug": "acme"},
     "score_source": {"kind": "custom", "path": "/abs/…/score.csv"},
     "segments": [{"key": "commercial", "label": "Commercial", "order": 1,
-                  "default_capacity": 150, "ks_top_n": 150},
+                  "default_capacity": 150},
                  {"key": "enterprise", "label": "Enterprise", "order": 2,
-                  "default_capacity": 50, "ks_top_n": 50}],
+                  "default_capacity": 50}],
     "boundary": {"metric": "total_employees", "label": "Total employees",
                  "thresholds": [{"segment": "enterprise", "min": 1000}]},
     "activity": {"window_days": 90, "sources": ["google_calendar", "fireflies"],
@@ -600,9 +644,10 @@ Write these into `{output_root}/_raw/` with your file tools:
     "strong_cutoff": 500
   }
   ```
-  `ks_top_n` is optional: how many of each rep's best accounts the top-N
-  Kolmogorov-Smirnov distance compares. Omit it for the defaults (50 for
-  `enterprise`, 150 for `commercial`, else `default_capacity`). `activity.as_of`
+  `default_capacity` is the target accounts per rep, and also the top N the
+  Kolmogorov-Smirnov distance compares. A single segment needs no thresholds.
+  `boundary.options` is optional: extra metric strings (e.g. `["revenue"]`) the
+  app's panel should offer as cutoffs. `activity.as_of`
   is optional too: a YYYY-MM-DD end for the window, for replaying an old pull;
   unset means today.
   `activity.attribution` is `owner` (default: only the account owner's own
@@ -753,9 +798,17 @@ Tell them how to work it, in this order:
      empty slots scoring 0, so a thin book reads weaker; accounts past N don't
      count, so a pile of weak accounts doesn't help. Every rep in a segment is
      read on the same N slots, so the noise is the same for all of them. N is
-     per segment: `ks_top_n` on each segment in `territory-plan.json`, default
-     50 for `enterprise`, 150 for `commercial`, else the segment's
-     `default_capacity`, else 50. It is tunable live in the Top N sidebar.
+     the segment's target accounts per rep (`default_capacity`), set in the
+     Segments panel.
+   - **Top N scores.** Each rep's best N scores as a small box plot on one
+     scale for the segment (box: middle half, whisker: 10th to 90th
+     percentile, tick: median, dashed line: the reps' median). The distance
+     says how far a book is from its peers; the strip shows where, e.g. a
+     strong top end but a thin middle. A book short of N is drawn faded.
+   - Above each table, a line counts the reps whose top-N distance is beyond
+     chance (p < 0.05), weaker and stronger, so a segment with a real fairness
+     problem reads as one at a glance. A segment with no reps says so instead
+     of disappearing.
    - **Kolmogorov-Smirnov distance, all accounts.** Is the rep's mix as strong
      as their peers'? The same distance over whole books. It ignores book size,
      so a rep with 30 accounts and one with 300 can both read 0. Small books
@@ -805,13 +858,22 @@ Tell them how to work it, in this order:
 
    (Book-balance itself — the coefficient-of-variation across reps — still drives
    the mover, it's just no longer the Overview's headline.)
-2. **Top N** (the left sidebar) — one input per segment: how many of each
-   rep's best accounts the top-N distance and Activity compare. Updates the
-   tables live. The segment line (`boundary.thresholds`), target accounts per
-   rep (`default_capacity`) and the strong-account cutoff (`strong_cutoff`) are
-   not in the app: change them in `spec.json` and re-run the pipeline. Re-running
-   keeps the user's accept / reject / manual decisions; `suggest_moves.py
-   --reset` starts over.
+2. **Segments and Team** (the left panel) — every interview answer, editable.
+   **Segments:** the cutoff metric (any `boundary.options` entry), and per
+   segment its name, its starting value and its target accounts per rep; add
+   or remove segments. The counts under each segment update as you type.
+   Switching the metric moves each line to keep the same share of accounts per
+   segment. **Team:** everyone whose name is on accounts in the CRM, with a
+   role: a rep in a segment (with a *balanced* box, off for a player-coach) or
+   **Holds accounts** (their accounts count as unallocated; a warehouse owner).
+   **Apply** re-derives ownership and segments, refreshes the suggestions and
+   keeps every accept / reject / manual decision. The app saves the settings to
+   `panel-config.json` and re-applies them on start, so re-running the pipeline
+   or redeploying keeps them; delete that file to go back to the plan the
+   pipeline wrote. With `activity.attribution = "owner"`, re-run the pipeline
+   after promoting someone to a rep: activity was counted for the previous
+   owner. The strong-account cutoff (`strong_cutoff`) is still set in
+   `spec.json`.
 3. **A rep's accounts** — there is no Accounts tab: account moves happen
    here. Clicking a rep (or the Unallocated row) on the Overview opens their
    book in a side sheet over the Overview (×, Esc or a click outside closes

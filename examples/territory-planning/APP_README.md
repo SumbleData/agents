@@ -17,14 +17,19 @@ or `PORT=9002 python3 app.py`.
 
 ## Work it in this order
 
-1. **Overview** — one table per segment: each rep's Kolmogorov-Smirnov distance
-   against their peers (on their top N and on all accounts) and their Activity.
-   The Unallocated row reads the unowned accounts the same way.
-2. **Click a rep** to open their accounts in a side sheet, idle ones first, and
+1. **Set up the segments and team** in the left panel: what decides an
+   account's segment, each segment's starting value and target accounts per
+   rep, and who is a rep versus who only holds accounts (their accounts count
+   as unallocated). Apply, and everything below updates.
+2. **Overview** — one table per segment: each rep's Kolmogorov-Smirnov distance
+   against their peers (on their top N, which is the segment's target, and on
+   all accounts), a strip of their top-N scores, and their Activity. The
+   Unallocated row reads the unowned accounts the same way.
+3. **Click a rep** to open their accounts in a side sheet, idle ones first, and
    move any of them with the Owner dropdown. The Unallocated row works the same way.
-3. **Fix double-allocations first.** Two reps owning CRM records for the *same
+4. **Fix double-allocations first.** Two reps owning CRM records for the *same
    company* distorts every other number.
-4. **Changes** — every proposed move (suggested, approved, dismissed) and a log
+5. **Changes** — every proposed move (suggested, approved, dismissed) and a log
    of each decision. `actions.csv` is the hand-off to your CRM.
 
 **This app never writes to your CRM.** Decisions are saved to `territory.csv`

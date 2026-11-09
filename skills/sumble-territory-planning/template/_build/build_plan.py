@@ -35,13 +35,13 @@ def main() -> None:
     out_path = Path(args.out).expanduser() if args.out else raw.parent / "territory-plan.json"
 
     segments = sorted(spec.get("segments") or [], key=lambda s: tl.to_int(s.get("order"), 0))
-    if len(segments) < 2:
-        sys.exit("[plan] spec.segments needs at least two segments.")
+    if not segments:
+        sys.exit("[plan] spec.segments needs at least one segment.")
     seg_keys = {str(s.get("key")) for s in segments}
 
     boundary = dict(spec.get("boundary") or {})
     thresholds = boundary.get("thresholds") or []
-    if not thresholds:
+    if not thresholds and len(segments) > 1:
         sys.exit(
             "[plan] boundary.thresholds is empty. Run calibrate_split.py, confirm the "
             "line with the user, and write it into spec.json before building the plan."

@@ -104,7 +104,6 @@ class KsBySegmentTest(unittest.TestCase):
         self.assertEqual(out["A"]["ks"], -0.5)  # two empty slots score 0
         self.assertEqual(out["B"]["ks"], 0.5)
 
-
     def test_without_top_n_whole_books_are_compared(self):
         rows = [self.row("A", s) for s in (60, 60)]
         rows += [self.row("B", s) for s in (60, 60, 60, 60)]
@@ -129,11 +128,24 @@ class KsTopNDefaultTest(unittest.TestCase):
 class ActivityAttributionTest(unittest.TestCase):
     def setUp(self):
         self.activity = {
-            ("owner@x.com", "acme.com"): {"meeting": 0, "call": 0, "email_out": 0,
-                "email_in": 0, "message": 0, "last_activity_date": "", "sources": set()},
-            ("csm@x.com", "acme.com"): {"meeting": 1, "call": 0, "email_out": 0,
-                "email_in": 0, "message": 3, "last_activity_date": "2026-11-01",
-                "sources": {"slack"}},
+            ("owner@x.com", "acme.com"): {
+                "meeting": 0,
+                "call": 0,
+                "email_out": 0,
+                "email_in": 0,
+                "message": 0,
+                "last_activity_date": "",
+                "sources": set(),
+            },
+            ("csm@x.com", "acme.com"): {
+                "meeting": 1,
+                "call": 0,
+                "email_out": 0,
+                "email_in": 0,
+                "message": 3,
+                "last_activity_date": "2026-11-01",
+                "sources": {"slack"},
+            },
         }
 
     def test_owner_attribution_ignores_colleagues(self):
@@ -199,6 +211,22 @@ class BoundaryMetricTest(unittest.TestCase):
         self.assertEqual(tl.metric_label("score"), "Account score")
         self.assertEqual(tl.metric_label("revenue"), "Annual revenue")
         self.assertEqual(tl.metric_label("jf_people:Sales"), "Sales headcount")
+
+
+class ComponentColumnsTest(unittest.TestCase):
+    def test_component_columns_survive_a_save(self):
+        rows = [
+            {"org_id": "1", "score": 50, "component:Size": "12.5", "component:PLG": "3"}
+        ]
+        cols = tl.territory_columns(rows)
+        self.assertEqual(cols[: len(tl.TERRITORY_COLUMNS)], tl.TERRITORY_COLUMNS)
+        self.assertEqual(
+            cols[len(tl.TERRITORY_COLUMNS) :], ["component:Size", "component:PLG"]
+        )
+
+    def test_no_components_means_the_standard_columns(self):
+        self.assertEqual(tl.territory_columns([{"org_id": "1"}]), tl.TERRITORY_COLUMNS)
+        self.assertEqual(tl.territory_columns([]), tl.TERRITORY_COLUMNS)
 
 
 if __name__ == "__main__":

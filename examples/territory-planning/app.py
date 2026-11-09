@@ -71,7 +71,7 @@ class State:
     # -- persistence -------------------------------------------------------
 
     def save(self) -> None:
-        tl.write_csv(self.csv_path, self.rows, tl.TERRITORY_COLUMNS)
+        tl.write_csv(self.csv_path, self.rows, tl.territory_columns(self.rows))
 
     def save_plan(self) -> None:
         tl.write_json(PLAN_PATH, self.plan)

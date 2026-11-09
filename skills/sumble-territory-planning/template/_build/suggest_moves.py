@@ -61,7 +61,7 @@ def main() -> None:
         sys.exit("[moves] territory.csv is empty.")
 
     report = tl.suggest_moves(plan, rows, reset=args.reset)
-    tl.write_csv(csv_path, rows, tl.TERRITORY_COLUMNS)
+    tl.write_csv(csv_path, rows, tl.territory_columns(rows))
 
     counts = report["counts"]
     segments = plan["segments"]

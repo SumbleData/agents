@@ -134,6 +134,20 @@ TERRITORY_COLUMNS = [
 ]
 
 
+# Optional score breakdown: any account-table column named "component:<name>"
+# (e.g. "component:Size") rides through to territory.csv and shows as a column
+# in the rep view. The app never computes with them.
+COMPONENT_PREFIX = "component:"
+
+
+def territory_columns(rows: list[dict[str, Any]]) -> list[str]:
+    """TERRITORY_COLUMNS plus any component columns, in first-seen order."""
+    extra: list[str] = []
+    for r in rows[:1]:
+        extra = [k for k in r if str(k).startswith(COMPONENT_PREFIX)]
+    return TERRITORY_COLUMNS + extra
+
+
 # ---------------------------------------------------------------------------
 # Small IO / coercion helpers
 # ---------------------------------------------------------------------------

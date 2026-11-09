@@ -44,6 +44,11 @@ CATEGORY_RANK = {
 WHITESPACE_CATEGORIES = {"whitespace", "whitespace_subsidiary"}
 
 
+def component_values(r: dict) -> dict[str, str]:
+    """The optional "component:<name>" score-breakdown columns of one row."""
+    return {k: v for k, v in r.items() if str(k).startswith(tl.COMPONENT_PREFIX)}
+
+
 def load_account_table(raw: Path, plan: dict) -> tuple[list[dict], str, str]:
     """(rows, score column, score source label)."""
     source = plan.get("score_source") or {}
@@ -116,12 +121,16 @@ def main() -> None:
                 "score": tl.to_float(r.get(score_col)),
                 "size_metric": tl.to_float(r.get(size_col)),
                 "sumble_url": r.get("sumble_url") or "",
+                "components": component_values(r),
             }
             orgs[org_id] = rec
         else:
             # Keep the strongest category and the highest score seen for the org.
             if CATEGORY_RANK.get(cat, 0) > CATEGORY_RANK.get(rec["account_category"], 0):
                 rec["account_category"] = cat
+            # The breakdown follows whichever record supplies the score.
+            if tl.to_float(r.get(score_col)) > rec["score"]:
+                rec["components"] = component_values(r)
             rec["score"] = max(rec["score"], tl.to_float(r.get(score_col)))
         if dom:
             rec["domains"].add(dom)
@@ -269,6 +278,7 @@ def main() -> None:
             "proposed_owner": "",
             "proposal_reason": "",
             "proposal_status": "",
+            **rec["components"],
         })
 
     # account_segment / segment_misfit / strong_idle all hang off the boundary,
@@ -292,7 +302,7 @@ def main() -> None:
         ]
 
     rows.sort(key=lambda r: (-r["score"], r["org_id"]))
-    tl.write_csv(out_path, rows, tl.TERRITORY_COLUMNS)
+    tl.write_csv(out_path, rows, tl.territory_columns(rows))
 
     # --- 5. audit -------------------------------------------------------------
     counts = {

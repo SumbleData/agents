@@ -22,7 +22,8 @@ const state = {
   repByName: {},
   tab: "overview",
   repView: null,          // {name, segKey} while one rep's book is open
-  repMode: "idle",        // rep view filter: "idle" (default) or "all"
+  repMode: "idle",        // rep view filter: "idle" (default), "customers" or "all"
+  components: [],         // optional score-component columns ("component:<name>")
   changesFilter: "all",   // Changes tab: all | approved | suggested | dismissed
   log: [],                // every decision made in the app, oldest first
   search: "",
@@ -294,6 +295,10 @@ function inSegmentBook(repName, segKey) {
       !WHITESPACE_CATS.has(r.account_category))
     .sort((a, b) => num(b.score) - num(a.score));
 }
+
+const COMPONENT_PREFIX = "component:";
+const isCustomer = (r) => r.account_category === "customer";
+const customerCount = (book) => book.filter(isCustomer).length;
 
 /** The Unallocated pool, read like one more book in each segment's table. It
  *  is never anyone's peer (in_balance false), so rep readings don't change. */
@@ -621,7 +626,10 @@ function renderMatrix(grp, metrics, sort) {
 
   const columns = [
     { label: "Rep", key: "rep", text: true },
-    { label: "In-seg", key: "inseg" },
+    { label: "Accounts", key: "inseg",
+      help: "Accounts the rep owns in this segment, customers included." },
+    { label: "Customers", key: "customers",
+      help: "How many of those accounts are customers." },
     ...metrics,
   ];
   // A sort key can outlive its column (e.g. Activity with no activity
@@ -641,6 +649,7 @@ function renderMatrix(grp, metrics, sort) {
   const sortVal = (row, key) => {
     if (key === "rep") return row.rep.name.toLowerCase();
     if (key === "inseg") return row.book.length;
+    if (key === "customers") return row.rep.pool ? null : customerCount(row.book);
     return row.vals[key]?.v ?? null;
   };
   rows.sort((a, b) => {
@@ -667,6 +676,10 @@ function renderMatrix(grp, metrics, sort) {
     const cells = columns.map((c) => {
       if (c.key === "rep") return `<td>${esc(rep.name)}</td>`;
       if (c.key === "inseg") return `<td class="num">${fmt(book.length)}</td>`;
+      if (c.key === "customers") {
+        return rep.pool ? `<td class="num matrix-empty">—</td>`
+          : `<td class="num">${fmt(customerCount(book))}</td>`;
+      }
       const cell = vals[c.key];
       if (!cell || cell.v == null) return `<td class="num matrix-empty ${c.cls || ""}">—</td>`;
       const v = cell.v, b = bounds[c.key];
@@ -706,6 +719,7 @@ function repViewRows() {
   const idle = state.repMode === "idle" && hasActivityData();
   return repBook(state.repView).filter((r) => {
     if (idle && num(r.worked)) return false;
+    if (state.repMode === "customers" && !isCustomer(r)) return false;
     if (q && !`${r.name} ${r.domain}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => {
@@ -741,10 +755,12 @@ function assignCell(r) {
   const st = r.proposal_status || "";
   const suggesting = st === "suggested" && r.proposed_owner;
 
+  // Name the segment only when there is more than one to tell apart.
+  const multiSeg = new Set(state.reps.map((rep) => rep.segment)).size > 1;
   const repOptions = state.reps.map((rep) => {
     const seg = state.segLabel[rep.segment] || rep.segment;
     return `<option value="${esc(rep.name)}" ${rep.name === eff ? "selected" : ""}>` +
-      `${esc(rep.name)} · ${esc(seg)}</option>`;
+      `${esc(rep.name)}${multiSeg ? ` · ${esc(seg)}` : ""}</option>`;
   }).join("");
 
   const head = suggesting
@@ -802,12 +818,14 @@ function renderRep() {
   // Idle (the default) or All.
   const hasAct = hasActivityData();
   const idleN = book.filter((r) => !num(r.worked)).length;
+  const custN = customerCount(book);
   const chip = (key, label, n, help) =>
     `<button class="cat-chip ${state.repMode === key ? "active" : ""}" data-mode="${key}"
       title="${esc(help)}">${esc(label)} <span class="cat-count">${fmt(n)}</span></button>`;
   $("#rep-filters").innerHTML = `<div class="filter-row">` +
     (hasAct ? chip("idle", "Idle", idleN,
       `No meeting, call, email or Slack post in the last ${fmt(state.plan.activity?.window_days || 90)} days.`) : "") +
+    (custN ? chip("customers", "Customers", custN, "Accounts that are already customers.") : "") +
     chip("all", "All", book.length, "Every account in this book.") + `</div>`;
   $$("#rep-filters [data-mode]").forEach((el) => {
     el.onclick = () => { state.repMode = el.dataset.mode; state.page = 0; render(); };
@@ -817,12 +835,15 @@ function renderRep() {
     { key: "rank", label: "Rank", num: true, sort: true },
     { key: "name", label: "Account", sort: true },
     { key: "score", label: "Score", num: true, sort: true },
+    ...state.components.map((k) => ({
+      key: k, label: k.slice(COMPONENT_PREFIX.length), num: true, sort: true, comp: true })),
     { key: "activity", label: "Activity", num: true },
     ...(isPool ? [{ key: "held_by", label: "Held by" }] : []),
     { key: "assign", label: "Owner" },
   ];
   $("#accounts-table thead").innerHTML = `<tr>${cols.map((c) =>
-    `<th class="${c.num ? "num" : ""} ${c.sort ? "sortable" : ""}" data-key="${c.key}">` +
+    `<th class="${c.num ? "num" : ""} ${c.sort ? "sortable" : ""} ${c.comp ? "comp-th" : ""}" ` +
+    `data-key="${esc(c.key)}"${c.comp ? ` title="Score component: ${esc(c.label)}"` : ""}>` +
     `${esc(c.label)}${state.sort.key === c.key ? (state.sort.dir === -1 ? " ▾" : " ▴") : ""}</th>`
   ).join("")}</tr>`;
   $$("#accounts-table th.sortable").forEach((th) => {
@@ -839,15 +860,28 @@ function renderRep() {
   const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
   state.page = Math.min(state.page, pages - 1);
   const slice = rows.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
+  // Shade each component against the rest of this book, so a strong PLG or
+  // growth account stands out on the page.
+  const compBounds = Object.fromEntries(state.components.map((k) => {
+    const vs = book.map((r) => num(r[k]));
+    return [k, { min: Math.min(...vs), max: Math.max(...vs) }];
+  }));
 
   $("#accounts-table tbody").innerHTML = slice.length ? slice.map((r) => {
     const acts = num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.messages);
-    return `<tr data-id="${esc(r.org_id)}">
+    const cust = isCustomer(r);
+    const comps = state.components.map((k) => {
+      const b = compBounds[k];
+      return r[k] === "" || r[k] == null ? `<td class="num comp-td matrix-empty">—</td>`
+        : `<td class="num comp-td"${heatStyleAttr(num(r[k]), b.min, b.max, "high")}>${fmt(r[k], 1)}</td>`;
+    }).join("");
+    return `<tr data-id="${esc(r.org_id)}"${cust ? ` class="customer-row"` : ""}>
       <td class="num">${accountRank(r) ? fmt(accountRank(r)) : "—"}</td>
       <td>${r.sumble_url
         ? `<a href="${esc(r.sumble_url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
-        : esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
-      <td class="num">${fmt(r.score, 1)}</td>
+        : esc(r.name)}<span class="cell-sub">${esc(r.domain)}` +
+        `${cust ? ` · <span class="customer-tag">Customer</span>` : ""}</span></td>
+      <td class="num">${fmt(r.score, 1)}</td>${comps}
       <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out · ${num(r.messages)} Slack messages">
         ${acts ? fmt(acts) : `<span class="zero">0</span>`}</td>
       ${isPool ? `<td>${esc((r.held_by || "").split("|").filter(Boolean).join(", ") || "—")}</td>` : ""}
@@ -856,7 +890,8 @@ function renderRep() {
   }).join("") : `<tr><td colspan="${cols.length}" class="empty-state">` +
     `${!book.length ? "No accounts yet. Open another rep or the Unallocated row and pick " +
       `${esc(v.name)} in the Owner column.` :
-      state.repMode === "idle" ? "No idle accounts." : "No accounts."}</td></tr>`;
+      state.repMode === "idle" ? "No idle accounts." :
+      state.repMode === "customers" ? "No customers." : "No accounts."}</td></tr>`;
   $$("#accounts-table tbody tr[data-id]").forEach((tr) => {
     tr.onclick = (e) => { if (!e.target.closest("a")) showDetail(tr.dataset.id); };
   });
@@ -1057,6 +1092,8 @@ function showView(view) {
   const tab = view === "changes" ? "changes" : "overview";
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
   $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== `view-${view}`));
+  // The Top N panel only drives the Overview; a rep's table needs the width.
+  $(".terr-layout").classList.toggle("no-panel", view === "rep");
   $("#tab-description").textContent = PAGE_DESCRIPTIONS[view] || "";
   render();
 }
@@ -1095,6 +1132,7 @@ async function init() {
   const data = await res.json();
   state.plan = data.plan;
   state.rows = data.rows;
+  state.components = Object.keys(data.rows[0] || {}).filter((k) => k.startsWith(COMPONENT_PREFIX));
   state.log = data.log || [];
   state.segments = (data.plan.segments || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   state.segLabel = Object.fromEntries(state.segments.map((s) => [s.key, s.label]));

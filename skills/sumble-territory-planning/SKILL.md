@@ -712,7 +712,8 @@ Tell them how to work it, in this order:
    segments. A **segment filter** at the top (`All segments` by default, plus
    one pill per segment) shows every segment's table or just one.
 
-   Rows are reps, with their **In-seg** account count, then two
+   Rows are reps, with their **Accounts** (in-segment count) and how many of
+   those are **Customers**, then two
    Kolmogorov-Smirnov distances, each followed by its **Activity** column when
    activity is loaded: distance top N, Activity top N, distance all accounts,
    Activity all accounts.
@@ -786,7 +787,7 @@ Tell them how to work it, in this order:
      ranks from two universes produces impossible numbers (an average below the
      arithmetic floor of `(N+1)/2`). The matrix ranks each rep's accounts only
      against their own segment, and counts only their **in-segment** accounts.
-   - **"In-seg" ≠ total book.** The count column is the rep's in-segment accounts,
+   - **"Accounts" ≠ total book.** The count column is the rep's in-segment accounts,
      which is often far below what they own — an enterprise rep sitting on a pile
      of commercial-sized accounts (misfits to shed) is exactly what that gap
      reveals.
@@ -804,14 +805,24 @@ Tell them how to work it, in this order:
    here. Clicking a rep (or the Unallocated row) on the Overview opens their
    book, with both distances (each opens the chart), a search box and one
    filter row: **Idle** (the default: no meeting, call, email or Slack post in
-   the window, so these are the accounts to move first) and **All**. Columns:
-   in-segment rank, account, score, activity count, *Held by* for the pool,
-   and **Owner**, a dropdown on every row. Picking a rep records a manual move;
+   the window, so these are the accounts to move first), **Customers** (shown
+   when the book has any) and **All**. Customer rows carry a blue left edge
+   and a *Customer* tag, so expansion accounts stand out when splitting a
+   book. Columns: in-segment rank, account, score, one column per score
+   component when the account table has them (below), activity count,
+   *Held by* for the pool, and **Owner**, a dropdown on every row. Picking a rep records a manual move;
    the account stays in the list showing its new owner. When the balancer
    suggests a move, that owner sits at the top of the dropdown marked
    "suggested" (picking it accepts), the control is tinted, and a **dismiss**
    link rejects it. The app groups by **effective owner** (current owner +
    accepted/manual moves), so the Overview tables update as soon as you go back.
+   **Score components.** Any account-table column named `component:<name>`
+   (for example `component:Size`, `component:PLG`) rides through
+   `merge_territory.py` into `territory.csv` and shows as a column after
+   Score, shaded against the rest of the book and sortable. Use it to show
+   why an account scores well, so the user can hand a rep accounts with a
+   chosen profile (heavy PLG use, fast growth). The app never computes with
+   them. Keep the names short: they are column headers.
 4. **Fix the double-allocations first.** Two reps on one company distorts every
    other number.
 5. **Changes** — every proposed owner change, whatever its state: suggested,

@@ -1488,6 +1488,8 @@ th.sortable .th-sort-label {
    button, chip, table, and panel style already declared.
    ========================================================================== */
 
+.terr-layout.no-panel { grid-template-columns: minmax(0, 1fr); }
+.terr-layout.no-panel #calibrate-panel { display: none; }
 .terr-layout {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
@@ -1835,6 +1837,11 @@ th.sortable .th-sort-label {
 .flag-warn { background: #FEF3C7; color: #92400E; }
 .flag-info { background: #E0E7FF; color: #3730A3; }
 .flag-new  { background: var(--accent-soft); color: #15803D; }
+.customer-tag { color: #1D4ED8; font-weight: 650; }
+#accounts-table tr.customer-row td:first-child { box-shadow: inset 3px 0 0 #3B82F6; }
+#accounts-table th.comp-th { white-space: normal; font-size: 10.5px; line-height: 1.2; padding-left: 6px; padding-right: 6px; }
+#accounts-table td .cell-sub { white-space: nowrap; }
+#accounts-table td.comp-td { padding-left: 6px; padding-right: 6px; }
 
 /* --- tables --- */
 .cell-sub { display: block; color: var(--fg-dim); font-size: 11px; }

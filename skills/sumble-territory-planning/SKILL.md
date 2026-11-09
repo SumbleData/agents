@@ -814,7 +814,8 @@ Tell them how to work it, in this order:
    --reset` starts over.
 3. **A rep's accounts** — there is no Accounts tab: account moves happen
    here. Clicking a rep (or the Unallocated row) on the Overview opens their
-   book, with both distances (each opens the chart), a search box and one
+   book in a side sheet over the Overview (× , Esc or a click outside closes
+   it), with both distances (each opens the chart), a search box and one
    filter row: **Idle** (the default: no meeting, call, email or Slack post in
    the window, so these are the accounts to move first), **Customers** (shown
    when the book has any) and **All**. Customer rows carry a blue left edge
@@ -826,7 +827,8 @@ Tell them how to work it, in this order:
    suggests a move, that owner sits at the top of the dropdown marked
    "suggested" (picking it accepts), the control is tinted, and a **dismiss**
    link rejects it. The app groups by **effective owner** (current owner +
-   accepted/manual moves), so the Overview tables update as soon as you go back.
+   accepted/manual moves), so the Overview tables under the sheet update with
+   each move.
    **Score components.** Any account-table column named `component:<name>`
    (for example `component:Size`, `component:PLG`) rides through
    `merge_territory.py` into `territory.csv` and shows as a column after

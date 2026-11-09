@@ -43,7 +43,6 @@ const state = {
 
 const PAGE_DESCRIPTIONS = {
   overview: "Each rep's book against their segment peers. Click a rep to move their accounts, or a distance for the ranked chart.",
-  rep: "Move an account with the last column. Idle accounts are the first to move.",
   changes: "Every proposed owner change, and a log of each decision. Export the approved ones for your CRM.",
 };
 
@@ -741,7 +740,17 @@ function openRep(name, segKey) {
   state.search = ""; $("#search-input").value = "";
   state.sort = { key: "score", dir: -1 };
   state.page = 0;
-  showView("rep");
+  $("#rep-sheet").classList.remove("hidden");
+  $("#rep-sheet-backdrop").classList.remove("hidden");
+  $("#rep-sheet").scrollTop = 0;
+  renderRep();
+}
+
+/** Close the rep's sheet; the Overview under it is already up to date. */
+function closeRep() {
+  state.repView = null;
+  $("#rep-sheet").classList.add("hidden");
+  $("#rep-sheet-backdrop").classList.add("hidden");
 }
 
 /** The "Assign to" cell — ONE owner dropdown per row does everything: allocate
@@ -1085,29 +1094,27 @@ async function decide(orgId, status, proposedOwner) {
   render();
 }
 
-/** Show a view: "overview", "rep" (one book, opened from the Overview, so the
- *  Overview tab stays lit) or "changes". */
+/** Show a tab: "overview" or "changes". A rep's book opens as a sheet over
+ *  the Overview (openRep), not as a view. */
 function showView(view) {
   state.tab = view;
-  const tab = view === "changes" ? "changes" : "overview";
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
+  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === view));
   $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== `view-${view}`));
-  // The Top N panel only drives the Overview; a rep's table needs the width.
-  $(".terr-layout").classList.toggle("no-panel", view === "rep");
   $("#tab-description").textContent = PAGE_DESCRIPTIONS[view] || "";
   render();
 }
 
 function switchTab(tab) {
-  state.repView = null;
+  closeRep();
   showView(tab);
 }
 
 function render() {
   computeStrongSet();  // refresh the "strong" set for the attention flags
   if (state.tab === "overview") renderOverview();
-  else if (state.tab === "rep") renderRep();
   else if (state.tab === "changes") renderChanges();
+  // The sheet sits over the Overview, which re-renders under it on each move.
+  if (state.repView) renderRep();
 }
 
 /** Put the top-N inputs back to the plan's values and rebuild them. */
@@ -1157,7 +1164,8 @@ async function init() {
   // The strong-account cutoff is not editable in the app; it comes from the
   // plan's strong_cutoff.
   $("#search-input").oninput = (e) => { state.search = e.target.value; state.page = 0; render(); };
-  $("#rep-back").onclick = (e) => { e.preventDefault(); switchTab("overview"); };
+  $("#rep-close").onclick = closeRep;
+  $("#rep-sheet-backdrop").onclick = closeRep;
   $("#page-prev").onclick = () => { state.page = Math.max(0, state.page - 1); render(); };
   $("#page-next").onclick = () => { state.page += 1; render(); };
   $("#detail-close").onclick = () => $("#detail-panel").classList.add("hidden");
@@ -1168,10 +1176,14 @@ async function init() {
   $("#export-sheet-2").onclick = () => dl("/api/territory.csv");
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && document.activeElement !== $("#search-input")) {
-      if (state.tab !== "rep") return;
+      if (!state.repView) return;
       e.preventDefault(); $("#search-input").focus();
     }
-    if (e.key === "Escape") $("#detail-panel").classList.add("hidden");
+    // Esc closes the top layer first: the account panel, then the sheet.
+    if (e.key === "Escape") {
+      if (!$("#detail-panel").classList.contains("hidden")) $("#detail-panel").classList.add("hidden");
+      else if (state.repView) closeRep();
+    }
   });
 
   switchTab("overview");

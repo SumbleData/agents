@@ -58,29 +58,6 @@
         <div id="overview-segments"></div>
       </section>
 
-      <!-- ================= One rep's book (opened from the Overview) ======= -->
-      <section id="view-rep" class="view hidden">
-        <p class="rep-back"><a href="#" id="rep-back">← All reps</a></p>
-        <h3 class="terr-h3" id="rep-title"></h3>
-        <p class="eval-diag-sub" id="rep-meta"></p>
-        <div id="rep-filters" class="filter-rows"></div>
-        <div class="search-wrap">
-          <input id="search-input" type="search"
-                 placeholder="Search name or domain… (press / to focus)" autocomplete="off" />
-        </div>
-        <div class="table-wrap">
-          <table id="accounts-table">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="pagination">
-          <button id="page-prev" class="btn-page" type="button">‹ Prev</button>
-          <span id="page-info" class="page-info"></span>
-          <button id="page-next" class="btn-page" type="button">Next ›</button>
-        </div>
-      </section>
-
       <!-- ================= Changes ================= -->
       <section id="view-changes" class="view hidden">
         <div id="changes-summary" class="export-summary"></div>
@@ -107,6 +84,34 @@
       </section>
       </section>
     </main>
+
+    <!-- ================= One rep's book: a side sheet over the Overview ===== -->
+    <div id="rep-sheet-backdrop" class="sheet-backdrop hidden"></div>
+    <aside id="rep-sheet" class="rep-sheet hidden" role="dialog" aria-labelledby="rep-title">
+      <div class="breakdown-header">
+        <div>
+          <h2 id="rep-title"></h2>
+          <p class="eval-diag-sub" id="rep-meta"></p>
+        </div>
+        <button id="rep-close" class="btn-icon" aria-label="Close">×</button>
+      </div>
+        <div id="rep-filters" class="filter-rows"></div>
+        <div class="search-wrap">
+          <input id="search-input" type="search"
+                 placeholder="Search name or domain… (press / to focus)" autocomplete="off" />
+        </div>
+        <div class="table-wrap">
+          <table id="accounts-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button id="page-prev" class="btn-page" type="button">‹ Prev</button>
+          <span id="page-info" class="page-info"></span>
+          <button id="page-next" class="btn-page" type="button">Next ›</button>
+        </div>
+    </aside>
 
     <aside id="detail-panel" class="detail-panel hidden">
       <div class="breakdown-header">

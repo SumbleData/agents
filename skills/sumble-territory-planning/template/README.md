@@ -20,8 +20,8 @@ or `PORT=9002 python3 app.py`.
 1. **Overview** — one table per segment: each rep's Kolmogorov-Smirnov distance
    against their peers (on their top N and on all accounts) and their Activity.
    The Unallocated row reads the unowned accounts the same way.
-2. **Click a rep** to see their accounts, idle ones first, and move any of them
-   with the Owner dropdown. The Unallocated row works the same way.
+2. **Click a rep** to open their accounts in a side sheet, idle ones first, and
+   move any of them with the Owner dropdown. The Unallocated row works the same way.
 3. **Fix double-allocations first.** Two reps owning CRM records for the *same
    company* distorts every other number.
 4. **Changes** — every proposed move (suggested, approved, dismissed) and a log

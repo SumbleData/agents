@@ -1488,8 +1488,6 @@ th.sortable .th-sort-label {
    button, chip, table, and panel style already declared.
    ========================================================================== */
 
-.terr-layout.no-panel { grid-template-columns: minmax(0, 1fr); }
-.terr-layout.no-panel #calibrate-panel { display: none; }
 .terr-layout {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
@@ -2088,6 +2086,32 @@ th.sortable:hover { color: var(--accent); }
 /* The Unallocated pool row: compared like a book, but it isn't a rep. */
 .matrix-table tr.pool-row td { font-style: italic; }
 
-/* Rep view: back link above the rep's name. */
-.rep-back { margin: 0 0 6px; font-size: 13px; }
+/* A rep's book: a wide sheet from the right, over a dimmed Overview. The
+   account panel (z-index 40) opens on top of it. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+  z-index: 30;
+}
+.rep-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(1180px, 94vw);
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 28px rgba(29, 41, 61, 0.18);
+  padding: 18px 22px 28px;
+  z-index: 35;
+  animation: sheet-in 0.18s ease-out;
+}
+.sheet-backdrop.hidden, .rep-sheet.hidden { display: none; }
+.rep-sheet #rep-title { margin: 0 0 4px; font-size: 20px; }
+.rep-sheet .table-wrap { max-height: none; overflow-y: visible; }
+@keyframes sheet-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rep-sheet { animation: none; } }
+@media (max-width: 700px) { .rep-sheet { width: 100vw; padding: 14px 16px 24px; } }
 #rep-meta .rep-ks { white-space: nowrap; }

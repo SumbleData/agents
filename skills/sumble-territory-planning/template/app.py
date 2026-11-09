@@ -17,10 +17,12 @@ from __future__ import annotations
 import base64
 import csv
 import gzip
+import hashlib
 import hmac
 import io
 import json
 import os
+import shutil
 import sys
 import threading
 from datetime import datetime, timezone
@@ -31,11 +33,19 @@ from typing import Any
 import territory_lib as tl
 
 APP_DIR = Path(__file__).resolve().parent
-PLAN_PATH = APP_DIR / "territory-plan.json"
 STATIC_DIR = APP_DIR / "static"
+# Where the plan, the sheet and the decision log are read and written. Locally
+# it is the app folder. On a host whose disk resets on restart (fly.io, Cloud
+# Run), point DATA_DIR at a persistent volume: the app seeds it from the files
+# shipped in the image and keeps every decision there.
+DATA_DIR = Path(os.environ.get("DATA_DIR") or APP_DIR).resolve()
+PLAN_PATH = DATA_DIR / "territory-plan.json"
 # One JSON line per decision made in the app, oldest first. The Changes tab
-# shows it newest first. territory.csv only holds each account's current state.
-LOG_PATH = APP_DIR / "changes.jsonl"
+# shows it newest first, and startup replays it (see State.replay_log), so a
+# rebuilt territory.csv or a redeploy keeps every decision.
+LOG_PATH = DATA_DIR / "changes.jsonl"
+# The hash of the image's territory.csv that DATA_DIR was last seeded from.
+SEED_MARK = DATA_DIR / ".seeded_from"
 
 # Statuses the UI may set. "suggested" is the pipeline's own output and is not
 # settable from the app — a user either accepts it, rejects it, or overrides the
@@ -45,17 +55,48 @@ VALID_STATUSES = {"accepted", "rejected", "manual", ""}
 _LOCK = threading.Lock()
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
+
+
+def seed_data_dir() -> None:
+    """Copy the image's plan and sheet into DATA_DIR when they are new.
+
+    The image is what was deployed; DATA_DIR is what survives restarts. A
+    sheet that differs from the one last seeded means fresh data was
+    deployed, so it replaces the working copy and the log is replayed onto
+    it. A decision log shipped in the image seeds an empty volume once.
+    """
+    if DATA_DIR == APP_DIR:
+        return
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    plan_src = APP_DIR / "territory-plan.json"
+    plan = tl.read_json(plan_src) if plan_src.exists() else {}
+    csv_name = plan.get("territory_csv") or "territory.csv"
+    stamp = _sha256(APP_DIR / csv_name)
+    seeded = SEED_MARK.read_text(encoding="utf-8").strip() if SEED_MARK.exists() else ""
+    if stamp and stamp != seeded:
+        for name in ("territory-plan.json", csv_name):
+            if (APP_DIR / name).exists():
+                shutil.copyfile(APP_DIR / name, DATA_DIR / name)
+        SEED_MARK.write_text(stamp, encoding="utf-8")
+        print(f"[seed] {DATA_DIR} ← {csv_name} from the image", file=sys.stderr)
+    if not LOG_PATH.exists() and (APP_DIR / "changes.jsonl").exists():
+        shutil.copyfile(APP_DIR / "changes.jsonl", LOG_PATH)
+
+
 class State:
     """The plan + sheet, kept in memory and written through on every decision."""
 
     def __init__(self) -> None:
+        seed_data_dir()
         if not PLAN_PATH.exists():
             raise FileNotFoundError(
                 f"{PLAN_PATH.name} not found at {PLAN_PATH}. "
                 "Generate it via the sumble-territory-planning skill."
             )
         self.plan: dict[str, Any] = tl.read_json(PLAN_PATH)
-        self.csv_path = APP_DIR / (self.plan.get("territory_csv") or "territory.csv")
+        self.csv_path = DATA_DIR / (self.plan.get("territory_csv") or "territory.csv")
         if not self.csv_path.exists():
             raise FileNotFoundError(
                 f"{self.csv_path.name} not found — run merge_territory.py first."
@@ -67,6 +108,46 @@ class State:
             for line in LOG_PATH.read_text(encoding="utf-8").splitlines():
                 if line.strip():
                     self.log.append(json.loads(line))
+        self.replay_log()
+
+    def replay_log(self) -> None:
+        """Re-apply each account's latest decision from the log.
+
+        merge_territory.py writes a fresh territory.csv with no decisions in
+        it, and a redeploy may seed one. Replaying the log puts the user's
+        moves back. When it already matches (the usual restart) nothing
+        changes. A move the CRM has since made (the account's owner is now
+        the proposed owner) is done, so it is cleared rather than replayed.
+        Delete changes.jsonl to start the plan over.
+        """
+        latest: dict[str, dict[str, Any]] = {}
+        for entry in self.log:
+            latest[str(entry.get("org_id"))] = entry
+        changed = missing = done = 0
+        for org_id, entry in latest.items():
+            row = self.by_id.get(org_id)
+            if row is None:
+                missing += 1
+                continue
+            want = {
+                "proposed_owner": entry.get("proposed_owner") or "",
+                "proposal_status": entry.get("status") or "",
+                "proposal_reason": entry.get("reason") or "",
+            }
+            if want["proposed_owner"] and want["proposed_owner"] == (row.get("owner") or ""):
+                want = {"proposed_owner": "", "proposal_status": "", "proposal_reason": ""}
+                done += 1
+            if any(str(row.get(k) or "") != v for k, v in want.items()):
+                row.update(want)
+                changed += 1
+        if changed:
+            self.save()
+        if changed or missing or done:
+            print(
+                f"[replay] {len(latest):,} accounts in changes.jsonl · {changed:,} restored · "
+                f"{done:,} already moved in the CRM · {missing:,} no longer in the sheet",
+                file=sys.stderr,
+            )
 
     # -- persistence -------------------------------------------------------
 

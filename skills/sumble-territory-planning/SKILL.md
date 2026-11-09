@@ -677,6 +677,17 @@ steps; they're inert for a local run. HTTP Basic Auth is **env-gated** — it
 activates only when `BASIC_AUTH_PASS` is set, so `python3 app.py` stays open
 locally.
 
+**A deployed app forgets decisions unless it has a volume.** fly.io and Cloud
+Run reset the container's disk on every restart and deploy, and fly's
+scale-to-zero restarts it after a few idle minutes. When people will make
+moves on the deployed app, set `DATA_DIR` to a persistent volume. On fly:
+`fly volumes create territory_data --size 1 -a <app>` once, then add
+`DATA_DIR = "/data"` to `[env]` and a `[mounts]` section
+(`source = "territory_data"`, `destination = "/data"`) to `fly.toml`, and
+run one machine (`--ha=false`), since a volume attaches to one. The app
+copies the image's plan and sheet onto the volume when the sheet changes
+and replays `changes.jsonl` onto it, so refreshed data keeps every decision.
+
 Write `{output_root}/.gitignore` via your file tool:
 ```
 __pycache__/
@@ -831,7 +842,9 @@ Tell them how to work it, in this order:
    dismiss it. Below it, a **log** of every decision made in the app, newest
    first ("Moved from A to B", "Dismissed suggestion", "Move cleared"). The log
    is `changes.jsonl` next to `territory.csv`, one JSON line per decision;
-   `territory.csv` only holds each account's current state. `actions.csv` (the
+   `territory.csv` only holds each account's current state. The app replays
+   the log on start, so re-running the pipeline keeps every decision; a move
+   the CRM has since made is cleared. Delete `changes.jsonl` to start over. `actions.csv` (the
    approved changes) is the hand-off to the CRM. **This app never writes to
    your CRM.**
 

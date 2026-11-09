@@ -21,9 +21,11 @@ const state = {
   segLabel: {},
   repByName: {},
   tab: "overview",
-  filters: new Set(),
-  repFilter: "",
-  segmentFilter: "",
+  repView: null,          // {name, segKey} while one rep's book is open
+  repMode: "idle",        // rep view filter: "idle" (default), "customers" or "all"
+  components: [],         // optional score-component columns ("component:<name>")
+  changesFilter: "all",   // Changes tab: all | approved | suggested | dismissed
+  log: [],                // every decision made in the app, oldest first
   search: "",
   page: 0,
   pageSize: 100,
@@ -33,34 +35,28 @@ const state = {
   scoreRank: {},        // org_id -> global rank by ICP score (1 = best)
   overviewSegment: "all", // Overview segment filter: "all" = both, else a key
   overviewSort: {         // per-matrix sort; default the summary metric, desc
-    strength: { key: "summary", dir: -1 },
-    coverage: { key: "summary", dir: -1 },
+    strength: { key: "ks_top", dir: -1 },
   },
+  owners: {},             // CRM owner name -> accounts their name is on
+  draft: null,            // the Segments + Team panel's unsaved edits
 };
 
 const PAGE_DESCRIPTIONS = {
-  overview: "Whether each rep's book is as strong as their peers' (KS) — plus what needs attention. Click a KS value to see that rep's accounts ranked; click a rep to open their accounts. With activity loaded, a second table adds how much of their best business they're actually working (Activation).",
-  accounts: "Every account. Assign any account to anyone with the dropdown in the last column — the Overview books update as you go. Filter by a flag, a rep, a segment, or the balancer's suggested moves (accept/reject inline). Click a row for its activity detail.",
-  export: "Download the approved changes for your CRM, or the full sheet with every flag and activity count.",
+  overview: "Each rep's book against their segment peers. Click a rep to move their accounts, or a distance for the ranked chart.",
+  changes: "Every proposed owner change, and a log of each decision. Export the approved ones for your CRM.",
 };
 
 // Flags read the EFFECTIVE owner (current + your allocations), so they update
-// the moment you assign an account on the Accounts tab.
+// the moment you move an account.
 // `needsActivity: true` hides the flag entirely when no activity is loaded.
 // With zero events every owned account trivially satisfies "not worked", so
 // these cards would report the whole book as neglected when the truth is that
 // the question is unanswerable. See hasActivityData().
 const FLAGS = [
-  { key: "not_worked",       label: "Not being worked",  test: (r) => effectiveOwner(r) && !num(r.worked), cls: "flag-warn", needsActivity: true,
-    help: "Owned, but the owner has had no meeting, call, or outbound email with them in the window." },
-  { key: "strong_idle",      label: "Strong but idle",   test: (r) => isStrong(r) && effectiveOwner(r) && !num(r.worked), cls: "flag-bad", needsActivity: true,
-    help: "Among the strongest accounts by ICP score (see the cutoff on the left), owned, and nobody is working it. The most expensive kind of neglect." },
-  { key: "strong_unallocated", label: "Strong but unallocated", test: (r) => isStrong(r) && !effectiveOwner(r) && !isWhitespace(r), cls: "flag-bad",
-    help: "Among the strongest accounts by ICP score (see the cutoff on the left), and no active rep owns it. Allocating it clears this flag." },
-  { key: "segment_misfit",   label: "Wrong segment",     test: (r) => { const o = effectiveOwner(r); return !!o && !!repSegment(o) && !!r.account_segment && repSegment(o) !== r.account_segment; }, cls: "flag-warn",
-    help: "The account's size puts it in one segment; its owner sells another." },
-  { key: "double_allocated", label: "Double-allocated",  test: (r) => num(r.double_allocated), cls: "flag-bad",
-    help: "Two or more reps own CRM records that resolve to the SAME company. Resolve these before rebalancing." },
+  { key: "unallocated", label: "Unallocated", test: (r) => !effectiveOwner(r) && !isWhitespace(r) && r.account_category !== "customer", cls: "flag-warn",
+    help: "No active rep owns it: unowned, or held by a warehouse owner." },
+  { key: "idle", label: "Idle", test: (r) => effectiveOwner(r) && !num(r.worked), cls: "flag-warn", needsActivity: true,
+    help: "Owned, with no meeting, call, email or Slack post in the window." },
 ];
 
 const REASON_LABELS = {
@@ -82,15 +78,16 @@ function isWhitespace(r) {
  *
  *  Mirrors territory_lib.has_activity() so the UI and the move engine agree.
  *  When false, every activity-derived surface is REMOVED rather than shown as
- *  zero: the Coverage matrix, the Activation column, the not-worked and
- *  strong-idle flags, and the whole suggested-moves queue. Zero events means
- *  "we cannot tell", and a 0% coverage table states the opposite.
+ *  zero: the Activity columns, the not-worked and strong-idle flags, and the
+ *  whole suggested-moves queue. Zero events means "we cannot tell", and a 0%
+ *  Activity column states the opposite.
  *  Memoised — it is read on every render and scans every row. */
 let _hasActivity = null;
 function hasActivityData() {
   if (_hasActivity === null) {
     _hasActivity = state.rows.some(
-      (r) => num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.emails_in) > 0
+      (r) => num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.emails_in) +
+        num(r.messages) > 0
     );
   }
   return _hasActivity;
@@ -130,193 +127,7 @@ function effectiveOwner(r) {
     ? (r.proposed_owner || r.owner || "") : (r.owner || "");
 }
 function repSegment(name) { return (state.repByName[name] || {}).segment || ""; }
-// ------------------------------------------------------------- calibration
 
-/** The two knobs that define a territory plan: where the line between segments
- *  sits on the boundary metric, and how many accounts a rep in each segment is
- *  meant to carry. Both are judgement calls, so the panel previews their effect
- *  client-side on every keystroke and only commits when you click Apply. */
-
-function boundaryThresholds() {
-  const out = {};
-  for (const t of state.plan.boundary?.thresholds || []) out[t.segment] = t.min;
-  return out;
-}
-
-/** Which segment a size falls in, mirroring territory_lib.segment_for_size:
- *  thresholds are inclusive minimums, highest first; anything below them all
- *  lands in the smallest segment. */
-function segmentForSize(size, thresholds) {
-  const ordered = [...state.segments].sort((a, b) => b.order - a.order);
-  for (const seg of ordered) {
-    const min = thresholds[seg.key];
-    if (min !== undefined && min !== null && size >= num(min)) return seg.key;
-  }
-  const smallest = [...state.segments].sort((a, b) => a.order - b.order)[0];
-  return smallest ? smallest.key : "";
-}
-
-/** Read whatever is currently typed into the panel. */
-function calibrateFormValues() {
-  const thresholds = {}, capacities = {};
-  for (const seg of state.segments) {
-    const t = $(`#cal-threshold-${seg.key}`);
-    const c = $(`#cal-capacity-${seg.key}`);
-    if (t) thresholds[seg.key] = t.value.trim();
-    if (c) capacities[seg.key] = c.value.trim();
-  }
-  return { thresholds, capacities };
-}
-
-function renderCalibrate() {
-  const saved = boundaryThresholds();
-  const metric = state.plan.boundary?.label || state.plan.boundary?.metric || "size";
-  const ordered = [...state.segments].sort((a, b) => a.order - b.order);
-
-  const smallest = ordered[0];
-
-  // Only rebuild the inputs when the segment set changes, so typing is not
-  // interrupted by a re-render.
-  if ($("#calibrate-controls").dataset.built !== "1") {
-    // Box 1 — the segment cutoff. One threshold per segment ABOVE the smallest;
-    // the smallest segment has no line of its own, it is "everything below".
-    const cutoffRows = ordered
-      .filter((seg) => seg.key !== smallest.key)
-      .map((seg) => {
-        const t = saved[seg.key];
-        return `<label class="cal-field">
-          <span>${esc(seg.label)} at or above</span>
-          <input type="number" min="0" step="1" id="cal-threshold-${esc(seg.key)}"
-                 class="terr-input" value="${t ?? ""}" />
-        </label>`;
-      }).join("");
-
-    // Box 2 — target accounts per rep, one per segment.
-    const capRows = ordered.map((seg) => `<label class="cal-field">
-        <span>${esc(seg.label)}</span>
-        <input type="number" min="0" step="1" id="cal-capacity-${esc(seg.key)}"
-               class="terr-input" value="${seg.default_capacity ?? ""}"
-               placeholder="unlimited" />
-      </label>`).join("");
-
-    $("#calibrate-controls").innerHTML = `
-      <div class="cal-box">
-        <h4 class="cal-box-title">Segment cutoff</h4>
-        <p class="cal-box-sub">Where the line falls on ${esc(metric)}.
-          ${esc(smallest.label)} is everything below it.</p>
-        ${cutoffRows}
-        <p class="cal-preview" id="cal-preview-counts"></p>
-      </div>
-      <div class="cal-box">
-        <h4 class="cal-box-title">Target accounts per rep</h4>
-        <p class="cal-box-sub">Cap per rep, by segment. Blank means unlimited.</p>
-        ${capRows}
-        <p class="cal-preview" id="cal-preview-seats"></p>
-      </div>`;
-    $("#calibrate-controls").dataset.built = "1";
-    $$("#calibrate-controls input").forEach((el) => {
-      el.oninput = renderCalibratePreview;   // live preview as you type
-      el.onchange = applyCalibration;         // commit (blur / Enter) re-runs
-    });
-  }
-  renderCalibratePreview();
-}
-
-/** Live, client-side: how many accounts land in each segment at the typed
- *  threshold, and how many the typed capacity can actually hold. The preview is
- *  instant; committing the field (blur / Enter) re-runs the balancer. */
-function renderCalibratePreview() {
-  const { thresholds } = calibrateFormValues();
-  const parsed = {};
-  for (const [k, v] of Object.entries(thresholds)) {
-    if (String(v).trim() !== "") parsed[k] = num(v);
-  }
-  const counts = {}, owned = {};
-  for (const seg of state.segments) { counts[seg.key] = 0; owned[seg.key] = 0; }
-  for (const r of state.rows) {
-    const key = segmentForSize(num(r.size_metric), parsed);
-    if (counts[key] === undefined) continue;
-    counts[key] += 1;
-    if (r.owner) owned[key] += 1;
-  }
-  const repsPerSeg = {};
-  for (const seg of state.segments) {
-    repsPerSeg[seg.key] = state.reps.filter(
-      (rep) => rep.segment === seg.key && rep.in_balance !== false).length;
-  }
-  const ordered = [...state.segments].sort((a, b) => a.order - b.order);
-
-  // Cutoff box: how the line splits the book right now.
-  const countsEl = $("#cal-preview-counts");
-  if (countsEl) {
-    countsEl.innerHTML = ordered.map((seg) => {
-      const unowned = counts[seg.key] - owned[seg.key];
-      return `<strong>${esc(seg.label)}</strong> ${fmt(counts[seg.key])} accounts ` +
-        `(${fmt(unowned)} unowned)`;
-    }).join("<br />");
-  }
-
-  // Capacity box: do the seats cover the demand?
-  const seatsEl = $("#cal-preview-seats");
-  if (seatsEl) {
-    seatsEl.innerHTML = ordered.map((seg) => {
-      const capEl = $(`#cal-capacity-${seg.key}`);
-      const cap = capEl && capEl.value.trim() !== "" ? num(capEl.value) : null;
-      const n = repsPerSeg[seg.key];
-      if (cap === null) {
-        return `<strong>${esc(seg.label)}</strong> ${fmt(n)} rep${n === 1 ? "" : "s"}, no cap`;
-      }
-      const seats = cap * n;
-      let note = `<strong>${esc(seg.label)}</strong> ${fmt(n)} × ${fmt(cap)} = ${fmt(seats)} seats`;
-      if (seats < counts[seg.key]) {
-        note += ` — <span class="cal-warn">${fmt(counts[seg.key] - seats)} cannot be held</span>`;
-      }
-      return note;
-    }).join("<br />");
-  }
-}
-
-let calibrating = false;
-async function applyCalibration() {
-  if (calibrating) return;               // a commit is already in flight
-  const { thresholds, capacities } = calibrateFormValues();
-  calibrating = true;
-  $("#calibrate-status").textContent = "Re-running the balancer…";
-  try {
-    const res = await fetch("/api/calibrate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Calibration always preserves the user's accept / reject / manual
-      // decisions; it only re-derives the pipeline's own suggestions.
-      body: JSON.stringify({ thresholds, capacities, reset: false }),
-    });
-    if (!res.ok) {
-      $("#calibrate-status").textContent =
-        `Could not apply: ${res.status} ${await res.text()}`;
-      return;
-    }
-    const out = await res.json();
-    state.plan = out.plan;
-    state.rows = out.rows;
-    state.segments = [...out.plan.segments].sort((a, b) => a.order - b.order);
-    state.segLabel = Object.fromEntries(state.segments.map((s) => [s.key, s.label]));
-    state.reps = out.plan.reps.filter((r) => r.is_rep);
-    state.repByName = Object.fromEntries(state.reps.map((r) => [r.name, r]));
-    const c = out.report.counts;
-    const unrouted = Object.entries(out.report.unrouted || {})
-      .map(([k, v]) => `${state.segLabel[k] || k} ${fmt(v)}`).join(", ");
-    $("#calibrate-status").innerHTML =
-      `Applied. <strong>${fmt(out.report.total)}</strong> proposals — ` +
-      `${fmt(c.misfit)} wrong-segment, ${fmt(c.assign_unallocated)} unowned, ` +
-      `${fmt(c.rebalance)} rebalance.` +
-      (unrouted ? ` <strong>Left unowned at this capacity:</strong> ${unrouted}.` : "") +
-      (out.report.frozen ? ` ${fmt(out.report.frozen)} of your own decisions kept.` : "");
-    $("#calibrate-controls").dataset.built = "";
-    render();
-  } finally {
-    calibrating = false;
-  }
-}
 
 // ---------------------------------------------------------------- rendering
 
@@ -331,141 +142,26 @@ function flagPills(r) {
     .map((f) => `<span class="flag-pill ${f.cls}">${esc(f.label)}</span>`).join(" ");
 }
 
-/** The one thing this app is asking you to DO: work the balancer's proposed
- *  moves. A full-width button below the two matrices and above the flag cards —
- *  the flags are diagnostics you browse, this is a queue you clear. It always
- *  reads as "go do this" and always lands on Accounts with the queue filtered;
- *  the on/off toggle lives there, as the primary filter, so this button has no
- *  state of its own to reflect. */
-function movesCtaHtml() {
-  // No activity => the mover deliberately proposes nothing (see
-  // territory_lib.suggest_moves). Explain that rather than showing the usual
-  // "books are balanced" empty state, which would be a flat lie.
-  if (!hasActivityData()) {
-    return `<div class="moves-cta empty">Move suggestions are off because no activity
-      data is loaded. The balancer never moves an account a rep is actively working —
-      with no meetings, calls or emails to check, that protection can't apply, so
-      proposing moves could hand away a live deal. Load activity sources and re-run
-      to turn suggestions on.</div>`;
-  }
-  const n = state.rows.filter((r) => r.proposal_status === "suggested").length;
-  if (!n) {
-    return `<div class="moves-cta empty">No suggested moves right now — the books are
-      balanced under the current settings. Change the segment line or the target book
-      size on the left to re-run the balancer.</div>`;
-  }
-  return `<button class="moves-cta" type="button">
-    <span class="moves-cta-count">${fmt(n)}</span>
-    <span class="moves-cta-text">
-      <strong>Review suggested moves</strong>
-      <span class="moves-cta-sub">Accounts the balancer would hand to a different
-        rep — accept or dismiss each one.</span>
-    </span>
-    <span class="moves-cta-arrow">→</span>
-  </button>`;
-}
 
-function wireMovesCta(root) {
-  const btn = root.querySelector(".moves-cta");
-  if (!btn || btn.tagName !== "BUTTON") return;
-  btn.onclick = () => {
-    state.filters = new Set(["suggested"]);
-    state.repFilter = "";
-    state.segmentFilter = "";
-    state.page = 0;
-    switchTab("accounts");
-  };
-}
-
-/** The Overview is the book-strength matrices per segment (rank + coverage,
- *  coloured by column) followed by the "needs attention" flag cards. */
+/** The Overview is one book-strength table per segment (two
+ *  Kolmogorov-Smirnov distances + Activity per rep, coloured by column)
+ *  followed by the "needs attention" flag cards. */
 function renderOverview() {
-  const { ranks, sizes } = segmentRanks();
+  const { sizes } = segmentRanks();
   const parts = [
     `<p class="eval-diag-sub" id="matrices-note">` +
-    "Two questions per rep: <strong>KS</strong> — is their book as strong as their " +
-    "peers'? (0 = same mix of accounts, + = stronger, − = weaker; " +
-    "<strong>click a KS value</strong> to see their accounts ranked.) " +
-    "<strong>Activation</strong> — how much of their best business are they " +
-    "actually working? Greener = stronger, down each column. <strong>Click any header to sort</strong>; " +
-    "click a rep to open their accounts. Hover any ⓘ for the detail.</p>",
+    "Kolmogorov-Smirnov distance against segment peers: 0 even, + stronger, − weaker. " +
+    "Top N is the segment's target accounts per rep; all accounts compares whole books. " +
+    "Activity is the share of accounts touched in the window. Grey = could be chance.</p>",
   ];
 
-  // Tier weighting for the Activation summary metric: an account's
-  // weight is by its RANK tier within its segment — top decile ×`decileW`, top
-  // quartile ×1, everything else 0 — times its ICP score. Decile ⊂ quartile.
-  const decileW = num(state.plan.tier_decile_weight) || 2;
-  const tierWeight = (segKey, orgId) => {
-    const n = sizes[segKey] || 0;
-    const rank = ranks[orgId];
-    if (!rank || !n) return 0;
-    if (rank <= Math.ceil(0.10 * n)) return decileW;   // top decile
-    if (rank <= Math.ceil(0.25 * n)) return 1;          // top quartile (not decile)
-    return 0;
-  };
-  const heldTierValue = (book, segKey) =>
-    book.reduce((s, r) => s + num(r.score) * tierWeight(segKey, r.org_id), 0);
-
-  // KS: how far this rep's mix of accounts sits from their peers' pooled mix,
-  // signed so + = stronger. Cached per render; the drill-down reads it too.
-  state.ksCache = {};
-  const ksCol = {
-    label: "KS", better: "diverging", fmt: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") +
-      Math.abs(v).toFixed(2),
-    cls: "ks-cell",
-    help: "Is this rep's book as strong as their peers' books? (Kolmogorov–Smirnov " +
-      "distance, on account score.)\n\n" +
-      "Line up every account in the rep's book by score, do the same for every other " +
-      "rep in the segment pooled together, and find the score where the two differ " +
-      "most. That gap is the KS distance: 0 means the rep got the same mix of strong and " +
-      "weak accounts as everyone else, 1 means no overlap at all. + means their book " +
-      "skews stronger, − weaker.\n\n" +
-      "It compares the MIX, not the size: a rep with 30 accounts and one with 300 can " +
-      "both read 0. Book size is the In-seg column. Rough guide: under 0.1 is even, " +
-      "0.1–0.25 is worth a look, above 0.25 is a real difference. A greyed value could " +
-      "be chance (small book, p ≥ 0.05).\n\nClick a value to see the rep's accounts ranked.",
-    value: (book, grp) => {
-      const k = ksForRep(book, grp);
-      state.ksCache[`${grp.key}|${k.rep}`] = k;
-      return k.n_peers ? k.ks : null;
-    },
-    // value() ran first for this row and cached the reading.
-    muted: (book, grp) => {
-      const k = state.ksCache[`${grp.key}|${grp.books.find((b) => b.book === book)?.rep.name}`];
-      return !!k && k.p >= KS_SIGNIFICANCE;
-    },
-  };
-  // Activation: of the top-tier value the rep holds, the share being worked.
-  const activationCol = {
-    label: "Activation", better: "high", fmt: (v) => `${fmt(v, 0)}%`,
-    help: "Of the best business this rep already owns, how much are they actually " +
-      "working?\n\n" +
-      "The segment's best accounts count here: one in the top 10% by score counts " +
-      "double, one in the top 25% counts once, the rest count zero. We ask what share " +
-      "of that value has had a meeting, call, or outbound email in the activity window. 100% = every good account " +
-      "they own is live; 0% = they're sitting on strong accounts and touching none of " +
-      "them.\n\n" +
-      "This is not about book size — a rep with 30 accounts and a rep with 300 can both " +
-      "be at 100%. Low Activation with a strong book (positive KS) is the expensive " +
-      "combination: the best accounts are parked with someone who isn't working them.",
-    value: (book, grp) => {
-      const held = heldTierValue(book, grp.key);
-      if (held <= 0) return null; // holds no top-tier value — nothing to activate
-      const worked = book.reduce((s, r) =>
-        s + (num(r.worked) ? num(r.score) * tierWeight(grp.key, r.org_id) : 0), 0);
-      return (100 * worked) / held;
-    },
-  };
-
-  // Only segments that actually have reps; pick a valid selection ("all" shows
-  // every segment, the default).
-  const segs = state.segments.filter((seg) =>
-    state.reps.some((r) => r.segment === seg.key));
+  // Every segment, including one with no reps yet: its accounts still need
+  // owners. Pick a valid selection ("all" shows every segment, the default).
+  const segs = state.segments;
   let selKey = state.overviewSegment;
   if (selKey !== "all" && !segs.some((s) => s.key === selKey)) selKey = "all";
   state.overviewSegment = selKey;
 
-  // Segment filter: All (both) + one pill per segment.
   if (segs.length > 1) {
     const pill = (key, label, sub) =>
       `<button class="seg-pill ${key === selKey ? "active" : ""}" data-seg="${esc(key)}">` +
@@ -477,52 +173,114 @@ function renderOverview() {
       `</div>`);
   }
 
-  // Build one row-group per shown segment — "All" includes every segment, a
-  // filter narrows to one. Either way there are exactly TWO tables below.
+  const windowDays = fmt(state.plan.activity?.window_days || 90);
+  // Activity is ENTIRELY activity-derived. With no events loaded it would
+  // read 0% for every rep, indistinguishable from a team working nothing, so
+  // the column is dropped and a note says why.
+  const hasAct = hasActivityData();
+  const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
+  const ksMetric = (mode, n) => ({
+    key: mode === "top" ? "ks_top" : "ks_all",
+    label: mode === "top" ? `Kolmogorov-Smirnov distance, top ${fmt(n)}`
+      : "Kolmogorov-Smirnov distance, all accounts",
+    better: "diverging", fmt: signed, cls: "ks-cell", ksMode: mode,
+    help: mode === "top"
+      ? `The rep's best ${fmt(n)} accounts against each peer's best ${fmt(n)}. ` +
+        `Missing accounts count as 0, so a thin book reads weaker. Under 0.1 is even, ` +
+        `over 0.25 a real gap. Click for the ranked accounts.`
+      : `The rep's whole book against their peers' books. Ignores book size. ` +
+        `Click for the ranked accounts.`,
+    value: (book, grp) => {
+      // An empty book (a new hire) has nothing to compare: blank, not -1.
+      if (!book.length) return null;
+      const k = ksForRep(book, grp, mode === "top" ? n : null);
+      return k.n_peers ? { v: k.ks, muted: k.p >= KS_SIGNIFICANCE } : null;
+    },
+  });
+  // Each rep's top N account scores as a strip on the segment's shared scale:
+  // whisker p10-p90, box p25-p75, tick at the median, dashed line at the
+  // reps' pooled median. Real accounts only; a book short of N is drawn
+  // faded, since the distance counts its empty slots as 0. The distance says
+  // how far apart two books are; the strip shows where.
+  const distMetric = (n, grp) => {
+    const best = (b) => b.book.map((r) => num(r.score)).sort((x, y) => y - x).slice(0, n);
+    const all = grp.books.flatMap(best);
+    const scale = { lo: all.length ? quantile(all, 0.02) : 0, hi: Math.max(1, ...all) };
+    if (scale.hi <= scale.lo) scale.lo = 0;
+    const peers = grp.books.filter((b) => !b.rep.pool && b.rep.in_balance !== false).flatMap(best);
+    const ref = peers.length ? quantile(peers, 0.5) : null;
+    return {
+      key: "dist", label: `Top ${fmt(n)} scores`, dist: true,
+      help: `Each rep's best ${fmt(n)} account scores, on one scale for the segment. ` +
+        "Box: middle half. Whisker: 10th to 90th percentile. Tick: median. " +
+        "Dashed line: the reps' median. Faded: fewer than " + fmt(n) +
+        " accounts, and the distance counts the missing ones as 0.",
+      value: () => null,
+      render: (book) => {
+        const top = best({ book });
+        return distStrip(top, scale, ref, top.length < n ? `${fmt(top.length)} of ${fmt(n)} slots filled` : "");
+      },
+    };
+  };
+
+  // Activity: the share of accounts with a meeting, call or email in the
+  // window. Read on the rep's top N by score (the accounts that matter most)
+  // and on their whole in-segment book.
+  const activityMetric = (mode, n) => ({
+    key: mode === "top" ? "act_top" : "act_all",
+    label: mode === "top" ? `Activity, top ${fmt(n)}` : "Activity, all accounts",
+    better: "high", fmt: (v) => `${fmt(v, 0)}%`,
+    help: (mode === "top" ? `Share of the rep's top ${fmt(n)} accounts` : "Share of the rep's accounts") +
+      ` with a meeting, call, email or Slack post in the last ${windowDays} days.`,
+    value: (book) => {
+      const slice = mode === "top"
+        ? [...book].sort((a, b) => num(b.score) - num(a.score)).slice(0, n) : book;
+      return slice.length ? { v: workedPctOf(slice) } : null;
+    },
+  });
+
+  // One table per segment: a rep is only ever compared with their own
+  // segment's peers, so the rows never share a scale across segments.
   const shown = selKey === "all" ? segs : segs.filter((s) => s.key === selKey);
-  const groups = shown.map((seg) => ({
-    key: seg.key,
-    label: seg.label,
-    order: seg.order ?? 0,
-    size: sizes[seg.key] || 0,
-    books: state.reps.filter((r) => r.segment === seg.key).map((rep) => ({
-      rep,
-      book: inSegmentBook(rep.name, seg.key),
-    })),
-  }));
-
-  if (groups.length) {
-    const ctx = groups.length === 1
-      ? `${esc(groups[0].label)} · ranked within ${fmt(groups[0].size)} accounts`
-      : groups.map((g) => `${esc(g.label)} within ${fmt(g.size)}`).join(" · ");
-    const windowDays = fmt(state.plan.activity?.window_days || 90);
-    parts.push(
-      `<h3 class="terr-h3">Book strength <span class="terr-sub">${ctx}</span></h3>`);
-    parts.push(renderMatrix(
-      groups, null, "high", null, ksCol,
-      { matrixId: "strength", sort: state.overviewSort.strength }));
-
-    // Coverage is ENTIRELY activity-derived. With no events loaded it would
-    // render every rep at 0% — indistinguishable from a team working nothing —
-    // so drop the table and say why instead.
-    if (hasActivityData()) {
+  for (const seg of shown) {
+    const grp = {
+      key: seg.key, label: seg.label, size: sizes[seg.key] || 0,
+      books: segmentBooks(seg.key),
+    };
+    const n = topNFor(seg.key);
+    const repBooks = grp.books.filter((b) => !b.rep.pool);
+    if (!repBooks.length) {
       parts.push(
-        `<h3 class="terr-h3">Coverage <span class="terr-sub">` +
-        `share worked in the last ${windowDays} days</span></h3>`);
-      parts.push(renderMatrix(
-        groups, (slice) => workedPctOf(slice), "high", (v) => `${fmt(v, 0)}%`, activationCol,
-        { matrixId: "coverage", sort: state.overviewSort.coverage, allLabel: "Whole book",
-          allHelp: `Of every account this rep owns in this segment, the share touched in ` +
-            `the last ${windowDays} days. Compare it with Activation: much lower is fine ` +
-            `(nobody works a whole book); much higher means they're spending time on ` +
-            `weaker accounts.` }));
-    } else {
-      parts.push(
-        `<div class="terr-note">No activity data loaded, so coverage cannot be ` +
-        `measured — the Coverage table, the Activation column and the ` +
-        `worked-based flags are hidden rather than shown as zero. Book strength ` +
-        `below is unaffected: it comes from ICP score and ownership only.</div>`);
+        `<h3 class="terr-h3">${esc(seg.label)} <span class="terr-sub">no reps · ` +
+        `${fmt(grp.size)} accounts</span></h3>` +
+        `<p class="seg-verdict seg-verdict-flag">No reps in this segment yet. ` +
+        `Give it reps in the Team panel, or its accounts stay unallocated.</p>`);
+      continue;
     }
+    // How many reps are off their peers by more than chance, on the top N.
+    let weaker = 0, stronger = 0;
+    for (const b of repBooks) {
+      if (!b.book.length || b.rep.in_balance === false) continue;
+      const k = ksForRep(b.book, grp, n);
+      if (k.n_peers && k.p < KS_SIGNIFICANCE) { if (k.ks < 0) weaker += 1; else stronger += 1; }
+    }
+    const verdict = weaker || stronger
+      ? [weaker && `${fmt(weaker)} weaker than peers`, stronger && `${fmt(stronger)} stronger`]
+          .filter(Boolean).join(", ")
+      : "no rep differs from peers by more than chance";
+    parts.push(
+      `<h3 class="terr-h3">${esc(seg.label)} <span class="terr-sub">` +
+      `${fmt(repBooks.length)} reps · target ${fmt(n)} per rep · ` +
+      `ranked within ${fmt(grp.size)} accounts</span></h3>` +
+      `<p class="seg-verdict${weaker || stronger ? " seg-verdict-flag" : ""}">${esc(verdict)}</p>`);
+    parts.push(renderMatrix(grp, [
+      ksMetric("top", n), distMetric(n, grp), ...(hasAct ? [activityMetric("top", n)] : []),
+      ksMetric("all", n), ...(hasAct ? [activityMetric("all", n)] : []),
+    ], state.overviewSort.strength));
+  }
+  if (!hasAct && shown.length) {
+    parts.push(
+      `<div class="terr-note">No activity loaded, so Activity is hidden.</div>`);
   }
   $("#overview-segments").innerHTML = parts.join("");
   $$("#overview-segments .seg-pill").forEach((btn) => {
@@ -530,45 +288,21 @@ function renderOverview() {
   });
   $$("#overview-segments th.sortable").forEach((th) => {
     th.onclick = () => {
-      const m = th.dataset.matrix, k = th.dataset.key;
-      const cur = state.overviewSort[m];
-      if (cur.key === k) cur.dir = -cur.dir;   // toggle direction
-      else state.overviewSort[m] = { key: k, dir: (k === "rep" || k === "seg") ? 1 : -1 };
+      const k = th.dataset.key;
+      const cur = state.overviewSort.strength;   // shared by every segment's table
+      if (cur.key === k) cur.dir = -cur.dir;     // toggle direction
+      else state.overviewSort.strength = { key: k, dir: k === "rep" ? 1 : -1 };
       renderOverview();
     };
   });
   $$("#overview-segments td.ks-cell[data-rep]").forEach((td) => {
     td.onclick = (e) => {
-      e.stopPropagation();   // the row click would jump to the Accounts tab
-      showRepRanking(td.dataset.rep, td.dataset.seg);
+      e.stopPropagation();   // the row click would open the rep's accounts
+      showRepRanking(td.dataset.rep, td.dataset.seg, td.dataset.mode);
     };
   });
   $$("#overview-segments tr.rep-row").forEach((tr) => {
-    tr.onclick = () => {
-      state.repFilter = tr.dataset.rep; state.filters = new Set();
-      state.segmentFilter = ""; state.page = 0;
-      switchTab("accounts");
-    };
-  });
-
-  $("#overview-moves-cta").innerHTML = movesCtaHtml();
-  wireMovesCta($("#overview-moves-cta"));
-
-  $("#highlight-cards").innerHTML = activeFlags().map((f) => {
-    const n = state.rows.filter(f.test).length;
-    return `<button class="highlight-card ${n ? "" : "empty"}" data-flag="${f.key}" title="${esc(f.help)}">
-      <span class="hc-count">${fmt(n)}</span>
-      <span class="hc-label">${esc(f.label)}</span>
-      <span class="hc-help">${esc(f.help)}</span>
-    </button>`;
-  }).join("");
-
-  $$("#highlight-cards .highlight-card").forEach((el) => {
-    el.onclick = () => {
-      state.filters = new Set([el.dataset.flag]);
-      state.repFilter = ""; state.segmentFilter = ""; state.page = 0;
-      switchTab("accounts");
-    };
+    tr.onclick = () => openRep(tr.dataset.rep, tr.dataset.seg);
   });
 }
 
@@ -605,6 +339,33 @@ function inSegmentBook(repName, segKey) {
     .filter((r) => effectiveOwner(r) === repName && r.account_segment === segKey &&
       !WHITESPACE_CATS.has(r.account_category))
     .sort((a, b) => num(b.score) - num(a.score));
+}
+
+const COMPONENT_PREFIX = "component:";
+const isCustomer = (r) => r.account_category === "customer";
+const customerCount = (book) => book.filter(isCustomer).length;
+
+/** The Unallocated pool, read like one more book in each segment's table. It
+ *  is never anyone's peer (in_balance false), so rep readings don't change. */
+const POOL = { name: "Unallocated", in_balance: false, pool: true };
+const UNALLOCATED_TEST = (r) =>
+  !effectiveOwner(r) && !isWhitespace(r) && r.account_category !== "customer";
+
+function poolBook(segKey) {
+  return state.rows
+    .filter((r) => r.account_segment === segKey && UNALLOCATED_TEST(r))
+    .sort((a, b) => num(b.score) - num(a.score));
+}
+
+function bookFor(name, segKey) {
+  return name === POOL.name ? poolBook(segKey) : inSegmentBook(name, segKey);
+}
+
+/** Every rep's book in a segment, plus the Unallocated pool. */
+function segmentBooks(segKey) {
+  return state.reps.filter((r) => r.segment === segKey)
+    .map((rep) => ({ rep, book: inSegmentBook(rep.name, segKey) }))
+    .concat([{ rep: POOL, book: poolBook(segKey) }]);
 }
 
 /** Conditional-formatting background for a value relative to the other values IN
@@ -659,17 +420,41 @@ function ksSigned(book, peers) {
   return { ks: Math.round(best * 1e4) / 1e4, p: ksPValue(bestAbs, a.length, b.length), at };
 }
 
-/** One rep's KS reading inside a segment group. Peers are the OTHER reps in the
- *  segment who count toward balance; a player-coach gets a reading but never
- *  sets the norm. Mirrors territory_lib.ks_by_segment(). */
-function ksForRep(book, grp) {
+const KS_TOP_N_FALLBACK = 50;
+
+/** The top N a segment's distance compares: its target accounts per rep.
+ *  Mirrors territory_lib.ks_top_n_for(). */
+function planTopN(seg) {
+  return num(seg.default_capacity) || num(seg.ks_top_n) || KS_TOP_N_FALLBACK;
+}
+
+function topNFor(segKey) {
+  const seg = state.segments.find((x) => x.key === segKey);
+  return seg ? planTopN(seg) : KS_TOP_N_FALLBACK;
+}
+
+/** A rep's best `n` scores, strongest first, padded with empty slots scoring 0
+ *  when the book is shorter than `n`. Mirrors territory_lib.top_n_scores(). */
+function topNScores(scores, n) {
+  const best = [...scores].sort((a, b) => b - a).slice(0, n);
+  return best.concat(Array(Math.max(0, n - best.length)).fill(0));
+}
+
+/** One rep's reading inside a segment group: their best N accounts against
+ *  each peer's best N, pooled. Peers are the OTHER reps in the segment who
+ *  count toward balance; a player-coach gets a reading but never sets the
+ *  norm. Mirrors territory_lib.ks_by_segment(). */
+function ksForRep(book, grp, n) {
   const me = grp.books.find((b) => b.book === book);
   const repName = me ? me.rep.name : "";
+  // n = null compares whole books; a number compares each rep's top n.
+  const pick = (scores) => (n ? topNScores(scores, n) : scores);
   const peers = grp.books
     .filter((b) => b.rep.name !== repName && b.rep.in_balance !== false)
-    .flatMap((b) => b.book.map((r) => num(r.score)));
-  const res = ksSigned(book.map((r) => num(r.score)), peers);
-  return { ...res, rep: repName, n: book.length, n_peers: peers.length, peers };
+    .flatMap((b) => pick(b.book.map((r) => num(r.score))));
+  const mine = pick(book.map((r) => num(r.score)));
+  const res = ksSigned(mine, peers);
+  return { ...res, rep: repName, n: book.length, top_n: n || null, n_peers: peers.length, mine, peers };
 }
 
 /** Diverging shade for a signed value: green when the book is stronger than
@@ -685,31 +470,50 @@ function divergingStyleAttr(val, maxAbs) {
 
 /** The KS drill-down: the rep's in-segment accounts ranked, with a chart of
  *  their score distribution against their peers' so the gap is visible. */
-function showRepRanking(repName, segKey) {
+function showRepRanking(repName, segKey, mode = "top") {
   const { ranks, sizes } = segmentRanks();
-  const book = inSegmentBook(repName, segKey);
-  const grp = {
-    key: segKey,
-    books: state.reps.filter((r) => r.segment === segKey)
-      .map((rep) => ({ rep, book: rep.name === repName ? book : inSegmentBook(rep.name, segKey) })),
+  const grp = { key: segKey, books: segmentBooks(segKey) };
+  const book = grp.books.find((b) => b.rep.name === repName)?.book || bookFor(repName, segKey);
+  const topN = topNFor(segKey);
+  const kTop = ksForRep(book, grp, topN);
+  const kAll = ksForRep(book, grp, null);
+  const k = mode === "all" ? kAll : kTop;   // the column clicked drives the chart
+  // The chart works on in-segment rank (1 = best). Same order as score, so the
+  // gap it draws is the distance in the table. A top-N slot the rep can't fill
+  // gets rank Infinity: it never counts as being in the segment's top x.
+  const rankList = (bk) => {
+    const best = [...bk].sort((a, c) => num(c.score) - num(a.score));
+    const sel = mode === "all" ? best : best.slice(0, topN);
+    const rs = sel.map((r) => ranks[r.org_id] || Infinity);
+    if (mode === "all") return rs;
+    return rs.concat(Array(Math.max(0, topN - rs.length)).fill(Infinity));
   };
-  const k = ksForRep(book, grp);
+  const mineR = rankList(book);
+  const peerR = grp.books
+    .filter((b) => b.rep.name !== repName && b.rep.in_balance !== false)
+    .flatMap((b) => rankList(b.book));
   const segLabel = state.segLabel[segKey] || segKey;
-  const sign = k.ks > 0 ? "+" : k.ks < 0 ? "−" : "";
+  const signed = (x) => (x.ks > 0 ? "+" : x.ks < 0 ? "−" : "") + Math.abs(x.ks).toFixed(2);
+  const pv = (x) => (x.p < 0.001 ? "p < 0.001" : `p = ${x.p.toFixed(3)}`);
+  const what = mode === "all" ? "Their mix of accounts" : `Their top ${fmt(topN)}`;
   const verdict = !k.n_peers ? "No peers in this segment to compare against."
     : k.p >= KS_SIGNIFICANCE
-      ? "Not clearly different from their peers — a gap this size could be chance."
-      : k.ks > 0 ? "Their book skews stronger than their peers'."
-        : "Their book skews weaker than their peers'.";
+      ? `${what}: not clearly different from their peers' — a gap this size could be chance.`
+      : k.ks > 0 ? `${what}: stronger than their peers'.`
+        : `${what}: weaker than their peers'.`;
 
   $("#detail-name").textContent = repName;
   $("#detail-meta").innerHTML =
-    `${esc(segLabel)} · KS <strong>${sign}${Math.abs(k.ks).toFixed(2)}</strong>` +
-    (k.n_peers ? ` · p ${k.p < 0.001 ? "< 0.001" : `= ${k.p.toFixed(3)}`}` : "") +
-    ` · ${fmt(k.n)} accounts vs ${fmt(k.n_peers)} peer accounts`;
+    `${esc(segLabel)} · ${fmt(book.length)} accounts<br>Kolmogorov-Smirnov distance: ` +
+    `top ${fmt(topN)} <strong>${signed(kTop)}</strong> (${pv(kTop)}) · ` +
+    `all accounts <strong>${signed(kAll)}</strong> (${pv(kAll)})` +
+    (book.length < topN ? `<br>${fmt(topN - book.length)} empty slots in their top ${fmt(topN)} count as score 0` : "");
 
   const activity = hasActivityData();
-  const rowsHtml = book.map((r, idx) => `<tr class="ks-acct" data-id="${esc(r.org_id)}">
+  const cut = topN < book.length
+    ? `<tr class="ks-cut"><td colspan="5">Past their top ${fmt(topN)}: not in the top-${fmt(topN)} distance</td></tr>` : "";
+  const rowsHtml = book.map((r, idx) => (idx === topN ? cut : "") +
+    `<tr class="ks-acct${idx >= topN ? " ks-past" : ""}" data-id="${esc(r.org_id)}">
       <td class="num">${idx + 1}</td>
       <td>${esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
       <td class="num">${ranks[r.org_id] ? fmt(ranks[r.org_id]) : "—"}</td>
@@ -720,113 +524,126 @@ function showRepRanking(repName, segKey) {
   $("#detail-body").innerHTML = `
     <div class="detail-section">
       <p>${esc(verdict)}</p>
-      ${k.n_peers ? ksChartHtml(book.map((r) => num(r.score)), k) : ""}
+      ${k.n_peers ? ksChartHtml(mineR, peerR, k.top_n, repName === POOL.name ? POOL.name : "This rep") : ""}
     </div>
     <div class="detail-section">
-      <h3>Their ${esc(segLabel)} accounts, strongest first</h3>
-      <p class="eval-diag-sub">Segment rank is out of ${fmt(sizes[segKey] || 0)}
-        ${esc(segLabel)} accounts (1 = best). Click an account for its detail.</p>
+      <h3>Accounts, strongest first</h3>
+      <p class="eval-diag-sub">Rank out of ${fmt(sizes[segKey] || 0)} (1 = best).</p>
       <table class="detail-table ks-rank-table"><thead><tr>
         <th class="num">#</th><th>Account</th><th class="num">Seg rank</th>
         <th class="num">Score</th>${activity ? `<th class="num">Worked</th>` : ""}
       </tr></thead><tbody>${rowsHtml ||
         `<tr><td colspan="5" class="empty-state">No accounts in this segment.</td></tr>`}</tbody></table>
-      <p><a href="#" id="ks-open-accounts">Open in the Accounts tab →</a></p>
+      <p><a href="#" id="ks-open-accounts">Move ${repName === POOL.name ? "these" : "their"} accounts →</a></p>
     </div>`;
   $$("#detail-body tr.ks-acct").forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.id); });
   $("#ks-open-accounts").onclick = (e) => {
     e.preventDefault();
-    state.repFilter = repName; state.segmentFilter = segKey;
-    state.filters = new Set(); state.page = 0;
     $("#detail-panel").classList.add("hidden");
-    switchTab("accounts");
+    openRep(repName, segKey);
   };
-  wireKsChart(book.map((r) => num(r.score)), k);
+  if (k.n_peers) wireKsChart(mineR, peerR, repName === POOL.name ? POOL.name : "This rep");
   $("#detail-panel").classList.remove("hidden");
 }
 
-/** Share of `vals` scoring at least `x`. */
-function shareAtLeast(sortedVals, x) {
-  let lo = 0, hi = sortedVals.length;            // first index with value >= x
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (sortedVals[mid] < x) lo = mid + 1; else hi = mid; }
-  return (sortedVals.length - lo) / sortedVals.length;
+/** Share of `sortedRanks` at rank `x` or better (1 = best). */
+function shareWithin(sortedRanks, x) {
+  let lo = 0, hi = sortedRanks.length;           // first index with rank > x
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedRanks[mid] <= x) lo = mid + 1; else hi = mid;
+  }
+  return lo / sortedRanks.length;
 }
 
 const KS_CHART = { w: 360, h: 210, l: 38, r: 10, t: 12, b: 34 };
 
-/** Two step lines: for each score on the x axis, the share of the book (and of
- *  the peers' pooled book) scoring at least that much. The widest vertical gap
- *  is the KS distance, marked with a dashed rule. */
-function ksChartHtml(bookScores, k) {
+/** x range: rank 1 to the worst real rank on either side. */
+function ksRankRange(mine, peers) {
+  const real = [...mine, ...peers].filter(Number.isFinite);
+  return [1, real.length ? Math.max(...real) : 1];
+}
+
+/** Where the two cumulative lines are furthest apart, and how far. */
+function rankGap(ms, ps) {
+  let best = { x: 1, d: 0 };
+  for (const x of new Set([...ms, ...ps].filter(Number.isFinite))) {
+    const d = shareWithin(ms, x) - shareWithin(ps, x);
+    if (Math.abs(d) > Math.abs(best.d)) best = { x, d };
+  }
+  return best;
+}
+
+/** Two step lines: for each rank x, the share of this rep's accounts (and of
+ *  their peers', pooled) in the segment's top x. The widest vertical gap is
+ *  the Kolmogorov-Smirnov distance, marked with a dashed rule. */
+function ksChartHtml(mine, peers, topN, who = "This rep") {
   const { w, h, l, r, t, b } = KS_CHART;
-  const all = [...bookScores, ...k.peers];
-  const lo = Math.min(...all), hi = Math.max(...all);
+  const [lo, hi] = ksRankRange(mine, peers);
   const span = hi - lo || 1;
   const X = (v) => l + ((v - lo) / span) * (w - l - r);
   const Y = (p) => t + (1 - p) * (h - t - b);
-  const steps = (vals) => {
-    const s = [...vals].sort((a, c) => a - c);
-    const xs = [...new Set(s)];
-    let d = `M${X(lo).toFixed(1)},${Y(1).toFixed(1)}`;
-    for (const x of xs) {
-      const after = shareAtLeast(s, x + 1e-9);   // share strictly above x
-      d += ` H${X(x).toFixed(1)} V${Y(after).toFixed(1)}`;
+  const ms = [...mine].sort((a, c) => a - c);
+  const ps = [...peers].sort((a, c) => a - c);
+  const steps = (s) => {
+    let d = `M${X(lo).toFixed(1)},${Y(0).toFixed(1)}`;
+    for (const x of new Set(s.filter(Number.isFinite))) {
+      d += ` H${X(x).toFixed(1)} V${Y(shareWithin(s, x)).toFixed(1)}`;
     }
     return d + ` H${X(hi).toFixed(1)}`;
   };
-  const bs = [...bookScores].sort((a, c) => a - c);
-  const ps = [...k.peers].sort((a, c) => a - c);
-  // At the gap score, both "share above" values; their difference is |KS|.
-  const gx = k.at ?? lo;
-  const yRep = shareAtLeast(bs, gx + 1e-9), yPeer = shareAtLeast(ps, gx + 1e-9);
+  const gap = rankGap(ms, ps);
+  const gx = gap.x;
+  const yRep = shareWithin(ms, gx), yPeer = shareWithin(ps, gx);
   const ticks = [0, 0.5, 1].map((p) =>
     `<line x1="${l}" x2="${w - r}" y1="${Y(p)}" y2="${Y(p)}" class="ks-grid"/>` +
     `<text x="${l - 6}" y="${Y(p) + 4}" class="ks-axis" text-anchor="end">${p * 100}%</text>`).join("");
-  const xt = [lo, (lo + hi) / 2, hi].map((v) =>
+  const xt = [lo, Math.round((lo + hi) / 2), hi].map((v) =>
     `<text x="${X(v)}" y="${h - b + 16}" class="ks-axis" text-anchor="middle">${fmt(v, 0)}</text>`).join("");
   const labelY = (y, other) => Y(y) + (y >= other ? -6 : 14);
   return `
     <div class="ks-legend">
-      <span><i class="ks-swatch ks-swatch-rep"></i>This rep</span>
+      <span><i class="ks-swatch ks-swatch-rep"></i>${esc(who)}</span>
       <span><i class="ks-swatch ks-swatch-peer"></i>Peers (pooled)</span>
     </div>
     <div class="ks-chart-wrap">
       <svg id="ks-chart" viewBox="0 0 ${w} ${h}" role="img"
-        aria-label="Share of book scoring at least each score, this rep against peers">
+        aria-label="Share of accounts in the segment's top x, this rep against peers">
         ${ticks}${xt}
-        <text x="${(l + w - r) / 2}" y="${h - 4}" class="ks-axis" text-anchor="middle">Account score</text>
+        <text x="${(l + w - r) / 2}" y="${h - 4}" class="ks-axis"
+          text-anchor="middle">Segment rank (1 = best)</text>
         <line x1="${X(gx)}" x2="${X(gx)}" y1="${Y(yRep)}" y2="${Y(yPeer)}" class="ks-gap"/>
-        <path d="${steps(k.peers)}" class="ks-line ks-line-peer"/>
-        <path d="${steps(bookScores)}" class="ks-line ks-line-rep"/>
-        <text x="${X(gx) + 5}" y="${labelY(yRep, yPeer)}" class="ks-label">This rep ${fmt(yRep * 100)}%</text>
+        <path d="${steps(ps)}" class="ks-line ks-line-peer"/>
+        <path d="${steps(ms)}" class="ks-line ks-line-rep"/>
+        <text x="${X(gx) + 5}" y="${labelY(yRep, yPeer)}" class="ks-label">${esc(who)} ${fmt(yRep * 100)}%</text>
         <text x="${X(gx) + 5}" y="${labelY(yPeer, yRep)}" class="ks-label">Peers ${fmt(yPeer * 100)}%</text>
         <line id="ks-cross" class="ks-cross" y1="${t}" y2="${h - b}" x1="-10" x2="-10"/>
         <rect id="ks-hit" x="${l}" y="${t}" width="${w - l - r}" height="${h - t - b}" fill="transparent"/>
       </svg>
       <div id="ks-tip" class="ks-tip hidden"></div>
     </div>
-    <p class="eval-diag-sub">Each line is the share of a book scoring at least the
-      score on the x axis. The dashed rule marks the widest gap between the two lines:
-      that gap is the KS distance.</p>`;
+    <p class="eval-diag-sub">Share of each side in the segment's top x${topN
+      ? `; empty slots in a top ${fmt(topN)} never count` : ""}. The dashed line
+      is the widest gap: the distance.</p>`;
 }
 
-/** Crosshair + tooltip on the KS chart: at the hovered score, the share of this
- *  rep's book and of their peers' scoring at least that much. */
-function wireKsChart(bookScores, k) {
+/** Crosshair + tooltip: at the hovered rank, the share of each side in the
+ *  segment's top x. */
+function wireKsChart(mine, peers, who = "This rep") {
   const svg = $("#ks-chart"), hit = $("#ks-hit"), tip = $("#ks-tip"), cross = $("#ks-cross");
   if (!svg || !hit) return;
   const { w, l, r } = KS_CHART;
-  const all = [...bookScores, ...k.peers];
-  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
-  const bs = [...bookScores].sort((a, c) => a - c);
-  const ps = [...k.peers].sort((a, c) => a - c);
+  const [lo, hi] = ksRankRange(mine, peers);
+  const span = hi - lo || 1;
+  const ms = [...mine].sort((a, c) => a - c);
+  const ps = [...peers].sort((a, c) => a - c);
   hit.onmousemove = (e) => {
     const box = svg.getBoundingClientRect();
     const sx = ((e.clientX - box.left) / box.width) * w;
-    const score = lo + ((sx - l) / (w - l - r)) * span;
+    const x = Math.max(lo, Math.round(lo + ((sx - l) / (w - l - r)) * span));
     cross.setAttribute("x1", sx); cross.setAttribute("x2", sx);
-    tip.innerHTML = `Score ≥ <strong>${fmt(score, 1)}</strong><br>` +
-      `This rep ${fmt(shareAtLeast(bs, score) * 100)}% · Peers ${fmt(shareAtLeast(ps, score) * 100)}%`;
+    tip.innerHTML = `Top <strong>${fmt(x)}</strong><br>` +
+      `${esc(who)} ${fmt(shareWithin(ms, x) * 100)}% · Peers ${fmt(shareWithin(ps, x) * 100)}%`;
     tip.style.left = `${e.clientX - box.left + 10}px`;
     tip.style.top = `${e.clientY - box.top - 10}px`;
     tip.classList.remove("hidden");
@@ -842,77 +659,70 @@ function workedPctOf(slice) {
   return (100 * slice.filter((r) => num(r.worked)).length) / slice.length;
 }
 
-/** One matrix over one or more segment `groups` — a single table. When more than
- *  one segment is shown, a **Segment column** labels each row. `valueOf(slice)` →
- *  the number the whole-book cell shows (or null); `better` is which direction
- *  is good; `fmtVal` formats it. Colours are assigned per COLUMN **within each segment**,
- *  so ranks drawn from different segment universes are never shaded against each
- *  other, even though the rows share one table.
- *
- *  `opts.allLabel` adds a whole-book column under that heading; omit it and the
- *  table is just the summary metric. Book strength omits it (KS already reads the
- *  whole book); coverage keeps it,
- *  because "what share of everything they own is being touched" is a fair
- *  question with a plain answer. */
-function renderMatrix(groups, valueOf, better, fmtVal, summary, opts) {
-  const showSeg = groups.length > 1;
-  const sort = opts.sort;
-  const allLabel = opts.allLabel || "";
+/** One segment's Overview table. `metrics` are the heat columns after Rep and
+ *  In-seg: each has `value(book, grp)` → `{v, muted?}` or null, a `fmt`, the
+ *  direction that is good (`better`: "high" or "diverging"), and an optional
+ *  `ksMode` that makes the cell open the rep's ranking. Colours run per column
+ *  within this segment only. `sort` is `{key, dir}`, shared across segments. */
+function quantile(values, q) {
+  const v = [...values].sort((a, b) => a - b);
+  if (!v.length) return 0;
+  const i = (v.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return v[lo] + (v[hi] - v[lo]) * (i - lo);
+}
 
-  // Flatten all segments into one sortable list; the Segment column keeps each
-  // row's universe legible once sorting interleaves them.
-  const flat = [];
-  for (const grp of groups) {
-    for (const { rep, book } of grp.books) {
-      const vals = {};
-      vals.all = book.length && valueOf ? valueOf(book) : null;
-      vals.summary = summary ? summary.value(book, grp) : null;
-      const muted = !!(summary && summary.muted && vals.summary != null &&
-        summary.muted(book, grp));
-      flat.push({ rep, book, grp, vals, muted });
-    }
-  }
+/** One rep's top-N scores as a small horizontal box plot (inline SVG). */
+function distStrip(scores, scale, ref, short) {
+  if (!scores.length) return "";
+  const W = 132, H = 18;
+  const x = (v) => 3 + (W - 6) * Math.min(1, Math.max(0, (v - scale.lo) / (scale.hi - scale.lo)));
+  const [p10, p25, p50, p75, p90] = [0.1, 0.25, 0.5, 0.75, 0.9].map((q) => quantile(scores, q));
+  const tip = `Median ${fmt(p50, 1)} · middle half ${fmt(p25, 1)}–${fmt(p75, 1)} · ` +
+    `10th–90th ${fmt(p10, 1)}–${fmt(p90, 1)}${short ? ` · ${short}` : ""}`;
+  return `<svg class="dist-strip${short ? " dist-short" : ""}" width="${W}" height="${H}"
+      viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title>` +
+    (ref != null ? `<line class="dist-ref" x1="${x(ref)}" x2="${x(ref)}" y1="1" y2="${H - 1}"/>` : "") +
+    `<line class="dist-whisker" x1="${x(p10)}" x2="${x(p90)}" y1="${H / 2}" y2="${H / 2}"/>` +
+    `<rect class="dist-box" x="${x(p25)}" y="4" width="${Math.max(2, x(p75) - x(p25))}" height="${H - 8}" rx="2"/>` +
+    `<line class="dist-median" x1="${x(p50)}" x2="${x(p50)}" y1="2" y2="${H - 2}"/></svg>`;
+}
 
-  // Column spec: text columns (Rep, Segment, In-seg) plus heat columns (summary,
-  // optionally whole-book). `heat` is the vals key + colour
-  // source; `dir` its good end.
+function renderMatrix(grp, metrics, sort) {
+  const rows = grp.books.map(({ rep, book }) => {
+    const vals = {};
+    for (const m of metrics) vals[m.key] = m.value(book, grp);
+    return { rep, book, vals };
+  });
+
   const columns = [
     { label: "Rep", key: "rep", text: true },
-    ...(showSeg ? [{ label: "Segment", key: "seg", text: true }] : []),
-    { label: "In-seg", key: "inseg" },
-    ...(summary ? [{ label: summary.label, key: "summary", heat: "summary",
-      dir: summary.better, fmtc: summary.fmt, help: summary.help,
-      cls: `summary-cell ${summary.cls || ""}`.trim() }] : []),
-    ...(allLabel ? [{ label: allLabel, key: "all", heat: "all", dir: better, fmtc: fmtVal,
-      help: opts.allHelp }] : []),
+    { label: "Accounts", key: "inseg",
+      help: "Accounts the rep owns in this segment, customers included." },
+    { label: "Customers", key: "customers",
+      help: "How many of those accounts are customers." },
+    ...metrics,
   ];
-
-  // A sort key can outlive its column (saved state, or a column that only exists
-  // on the other matrix) — fall back to the default rather than sorting on a
-  // key nothing renders.
+  // A sort key can outlive its column (e.g. Activity with no activity
+  // loaded); fall back to the first metric rather than sorting on nothing.
   if (!columns.some((c) => c.key === sort.key)) {
-    sort.key = summary ? "summary" : "rep";
+    sort.key = metrics[0]?.key || "rep";
     sort.dir = -1;
   }
 
-  // Conditional formatting is over the WHOLE column (all rows, both segments),
-  // not per segment.
   const bounds = {};
-  for (const c of columns) {
-    if (!c.heat && c.heat !== 0) continue;
-    const vs = flat.map((r) => r.vals[c.heat]).filter((v) => v != null);
-    bounds[c.heat] = vs.length ? { min: Math.min(...vs), max: Math.max(...vs) } : null;
+  for (const m of metrics) {
+    const vs = rows.map((r) => r.vals[m.key]?.v).filter((v) => v != null);
+    bounds[m.key] = vs.length ? { min: Math.min(...vs), max: Math.max(...vs) } : null;
   }
 
   // Sort (nulls always last).
   const sortVal = (row, key) => {
     if (key === "rep") return row.rep.name.toLowerCase();
-    if (key === "seg") return row.grp.order;
     if (key === "inseg") return row.book.length;
-    if (key === "summary") return row.vals.summary;
-    return row.vals.all;
+    if (key === "customers") return row.rep.pool ? null : customerCount(row.book);
+    return row.vals[key]?.v ?? null;
   };
-  flat.sort((a, b) => {
+  rows.sort((a, b) => {
     const av = sortVal(a, sort.key), bv = sortVal(b, sort.key);
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
@@ -928,64 +738,95 @@ function renderMatrix(groups, valueOf, better, fmtVal, summary, opts) {
     // Intuition lives on an info icon, not a bare header title — more
     // discoverable, and it won't clash with the sort click.
     const info = c.help ? ` <span class="col-info" title="${esc(c.help)}">ⓘ</span>` : "";
+    if (c.dist) return `<th class="dist-th">${esc(c.label)}${info}</th>`;
     return `<th class="sortable ${c.text ? "" : "num"}${active ? " sorted" : ""}" ` +
-      `data-matrix="${esc(opts.matrixId)}" data-key="${esc(c.key)}">` +
-      `${esc(c.label)}${arrow}${info}</th>`;
+      `data-key="${esc(c.key)}">${esc(c.label)}${arrow}${info}</th>`;
   }).join("")}</tr>`;
 
-  const body = flat.map(({ rep, book, grp, vals, muted }) => {
+  const body = rows.map(({ rep, book, vals }) => {
     const cells = columns.map((c) => {
       if (c.key === "rep") return `<td>${esc(rep.name)}</td>`;
-      if (c.key === "seg") return `<td class="seg-cell">${esc(grp.label)}</td>`;
       if (c.key === "inseg") return `<td class="num">${fmt(book.length)}</td>`;
-      const v = vals[c.heat];
-      if (v == null) return `<td class="num matrix-empty ${c.cls || ""}">—</td>`;
-      const b = bounds[c.heat];
-      const isSummary = c.key === "summary";
+      if (c.key === "customers") {
+        return rep.pool ? `<td class="num matrix-empty">—</td>`
+          : `<td class="num">${fmt(customerCount(book))}</td>`;
+      }
+      if (c.dist) {
+        return book.length ? `<td class="dist-cell">${c.render(book)}</td>`
+          : `<td class="dist-cell matrix-empty">—</td>`;
+      }
+      const cell = vals[c.key];
+      if (!cell || cell.v == null) return `<td class="num matrix-empty ${c.cls || ""}">—</td>`;
+      const v = cell.v, b = bounds[c.key];
       // A diverging column is shaded by distance from 0 in either direction;
       // a reading that could be chance is left unshaded and greyed.
-      const bg = isSummary && muted ? "" : c.dir === "diverging"
+      const bg = cell.muted ? "" : c.better === "diverging"
         ? divergingStyleAttr(v, Math.max(Math.abs(b.min), Math.abs(b.max)))
-        : heatStyleAttr(v, b.min, b.max, c.dir);
-      const extra = isSummary && muted ? " ks-muted" : "";
-      const data = isSummary ? ` data-rep="${esc(rep.name)}" data-seg="${esc(grp.key)}"` : "";
-      const tip = isSummary && muted ? ` title="Could be chance: p ≥ ${KS_SIGNIFICANCE}"` : "";
-      return `<td class="num ${c.cls || ""}${extra}"${bg}${data}${tip}>${c.fmtc(v)}</td>`;
+        : heatStyleAttr(v, b.min, b.max, c.better);
+      const extra = cell.muted ? " ks-muted" : "";
+      const data = c.ksMode
+        ? ` data-rep="${esc(rep.name)}" data-seg="${esc(grp.key)}" data-mode="${c.ksMode}"` : "";
+      const tip = cell.muted ? ` title="Could be chance: p ≥ ${KS_SIGNIFICANCE}"` : "";
+      return `<td class="num ${c.cls || ""}${extra}"${bg}${data}${tip}>${c.fmt(v)}</td>`;
     }).join("");
-    return `<tr class="rep-row" data-rep="${esc(rep.name)}">${cells}</tr>`;
+    return `<tr class="rep-row${rep.pool ? " pool-row" : ""}" data-rep="${esc(rep.name)}"` +
+      ` data-seg="${esc(grp.key)}"` +
+      `${rep.pool ? ` title="Unowned accounts, compared with the reps' books"` : ""}>${cells}</tr>`;
   }).join("");
 
   return `<div class="table-wrap"><table class="matrix-table">
     <thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 
-function filteredRows() {
+/** One book, as listed in the rep view: everything the rep owns or has been
+ *  proposed, so an account stays on screen (showing its new owner) after you
+ *  move it. The Unallocated pool is its segment's unowned accounts. */
+function repBook(v) {
+  if (v.name === POOL.name) {
+    return state.rows.filter((r) => !r.owner && !isWhitespace(r) &&
+      r.account_category !== "customer" && r.account_segment === v.segKey);
+  }
+  return state.rows.filter((r) => r.owner === v.name || r.proposed_owner === v.name);
+}
+
+function repViewRows() {
   const q = state.search.trim().toLowerCase();
-  return state.rows.filter((r) => {
-    if (state.filters.size) {
-      const preds = [...state.filters].map((key) =>
-        key === "suggested"
-          ? (row) => row.proposal_status === "suggested"
-          : (FLAGS.find((f) => f.key === key)?.test || (() => false)));
-      if (!preds.some((p) => p(r))) return false;
-    }
-    if (state.repFilter && r.owner !== state.repFilter && r.proposed_owner !== state.repFilter) return false;
-    if (state.segmentFilter && r.account_segment !== state.segmentFilter) return false;
-    if (q) {
-      const hay = `${r.name} ${r.domain} ${r.owner} ${r.proposed_owner}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+  const idle = state.repMode === "idle" && hasActivityData();
+  return repBook(state.repView).filter((r) => {
+    if (idle && num(r.worked)) return false;
+    if (state.repMode === "customers" && !isCustomer(r)) return false;
+    if (q && !`${r.name} ${r.domain}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => {
     const k = state.sort.key;
     let av, bv;
-    if (k === "name" || k === "owner") { av = String(a[k] || ""); bv = String(b[k] || ""); }
+    if (k === "name") { av = String(a.name || ""); bv = String(b.name || ""); }
     else if (k === "rank") { av = accountRank(a) ?? Infinity; bv = accountRank(b) ?? Infinity; }
     else { av = num(a[k]); bv = num(b[k]); }
     if (av < bv) return -state.sort.dir;
     if (av > bv) return state.sort.dir;
     return String(a.org_id).localeCompare(String(b.org_id));
   });
+}
+
+/** Open one rep's book (or the Unallocated pool) on the Idle filter. */
+function openRep(name, segKey) {
+  state.repView = { name, segKey };
+  state.repMode = hasActivityData() ? "idle" : "all";
+  state.search = ""; $("#search-input").value = "";
+  state.sort = { key: "score", dir: -1 };
+  state.page = 0;
+  $("#rep-sheet").classList.remove("hidden");
+  $("#rep-sheet-backdrop").classList.remove("hidden");
+  $("#rep-sheet").scrollTop = 0;
+  renderRep();
+}
+
+/** Close the rep's sheet; the Overview under it is already up to date. */
+function closeRep() {
+  state.repView = null;
+  $("#rep-sheet").classList.add("hidden");
+  $("#rep-sheet-backdrop").classList.add("hidden");
 }
 
 /** The "Assign to" cell — ONE owner dropdown per row does everything: allocate
@@ -999,10 +840,12 @@ function assignCell(r) {
   const st = r.proposal_status || "";
   const suggesting = st === "suggested" && r.proposed_owner;
 
+  // Name the segment only when there is more than one to tell apart.
+  const multiSeg = new Set(state.reps.map((rep) => rep.segment)).size > 1;
   const repOptions = state.reps.map((rep) => {
     const seg = state.segLabel[rep.segment] || rep.segment;
     return `<option value="${esc(rep.name)}" ${rep.name === eff ? "selected" : ""}>` +
-      `${esc(rep.name)} · ${esc(seg)}</option>`;
+      `${esc(rep.name)}${multiSeg ? ` · ${esc(seg)}` : ""}</option>`;
   }).join("");
 
   const head = suggesting
@@ -1034,101 +877,122 @@ function assignCell(r) {
   return `<div class="assign-wrap">${select}${note}</div>`;
 }
 
-function renderAccounts() {
-  // Two rows. The primary row is the choice this page is actually for — the
-  // whole book, or the balancer's queue. The five flags are diagnostics you
-  // reach for second, so they sit in a quieter row underneath rather than
-  // competing with the queue in one undifferentiated strip of seven chips.
-  const suggested = state.rows.filter((r) => r.proposal_status === "suggested").length;
-  const moveOn = state.filters.has("suggested");
-  $("#account-filters").innerHTML =
-    `<div class="filter-row filter-row-primary">` +
-    `<button class="filter-primary ${state.filters.size ? "" : "active"}" data-flag=""
-       title="Every account in the plan.">All
-       <span class="cat-count">${fmt(state.rows.length)}</span></button>` +
-    `<button class="filter-primary filter-primary-move ${moveOn ? "active" : ""}
-       ${suggested ? "" : "empty"}" data-flag="suggested"
-       title="${suggested
-      ? "Accounts the balancer would hand to a different rep — accept or dismiss each one in the last column."
-      : "Nothing to review: the books are balanced under the current settings."}">
-       ✨ Suggested moves
-       <span class="cat-count">${fmt(suggested)}</span></button>` +
-    `</div>` +
-    `<div class="filter-row filter-row-secondary">` +
-    `<span class="filter-label">Also</span>` +
-    activeFlags().map((f) => {
-      const n = state.rows.filter(f.test).length;
-      return `<button class="cat-chip ${state.filters.has(f.key) ? "active" : ""}"
-        data-flag="${f.key}" title="${esc(f.help)}">${esc(f.label)}
-        <span class="cat-count">${fmt(n)}</span></button>`;
-    }).join("") +
-    `</div>`;
-  $$("#account-filters [data-flag]").forEach((el) => {
-    el.onclick = () => {
-      if (el.classList.contains("empty")) return;  // nothing behind it to show
-      const key = el.dataset.flag;
-      if (!key) state.filters = new Set();
-      else if (state.filters.has(key)) state.filters.delete(key);
-      else state.filters.add(key);
-      state.page = 0;
-      render();
-    };
+function renderRep() {
+  const v = state.repView;
+  const isPool = v.name === POOL.name;
+  const book = repBook(v);
+  const segLabel = state.segLabel[v.segKey] || v.segKey || "";
+  $("#rep-title").textContent = isPool ? `Unallocated · ${segLabel}` : v.name;
+
+  // The rep's two readings from the Overview table, each opening the chart.
+  const grp = { key: v.segKey, books: segmentBooks(v.segKey) };
+  const segBook = grp.books.find((b) => b.rep.name === v.name)?.book || bookFor(v.name, v.segKey);
+  const topN = topNFor(v.segKey);
+  const signed = (x) => (x.ks > 0 ? "+" : x.ks < 0 ? "−" : "") + Math.abs(x.ks).toFixed(2);
+  const kTop = ksForRep(segBook, grp, topN), kAll = ksForRep(segBook, grp, null);
+  const reading = (k, mode, label) => k.n_peers
+    ? `<a href="#" class="rep-ks" data-mode="${mode}">${label} ${signed(k)}</a>` : "";
+  $("#rep-meta").innerHTML = `${fmt(book.length)} accounts` +
+    (isPool ? "" : ` · ${esc(segLabel)}`) +
+    (kTop.n_peers && segBook.length ? ` · Kolmogorov-Smirnov distance: ${reading(kTop, "top", `top ${fmt(topN)}`)}, ` +
+      `${reading(kAll, "all", "all accounts")}` : "");
+  $$("#rep-meta .rep-ks").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); showRepRanking(v.name, v.segKey, a.dataset.mode); };
+  });
+
+  // Idle (the default) or All.
+  const hasAct = hasActivityData();
+  const idleN = book.filter((r) => !num(r.worked)).length;
+  const custN = customerCount(book);
+  const chip = (key, label, n, help) =>
+    `<button class="cat-chip ${state.repMode === key ? "active" : ""}" data-mode="${key}"
+      title="${esc(help)}">${esc(label)} <span class="cat-count">${fmt(n)}</span></button>`;
+  $("#rep-filters").innerHTML = `<div class="filter-row">` +
+    (hasAct ? chip("idle", "Idle", idleN,
+      `No meeting, call, email or Slack post in the last ${fmt(state.plan.activity?.window_days || 90)} days.`) : "") +
+    (custN ? chip("customers", "Customers", custN, "Accounts that are already customers.") : "") +
+    chip("all", "All", book.length, "Every account in this book.") + `</div>`;
+  $$("#rep-filters [data-mode]").forEach((el) => {
+    el.onclick = () => { state.repMode = el.dataset.mode; state.page = 0; render(); };
   });
 
   const cols = [
-    { key: "rank", label: "Rank", num: true },
-    { key: "name", label: "Account" },
-    { key: "account_segment", label: "Segment" },
-    { key: "size_metric", label: sizeLabel(), num: true },
-    { key: "score", label: "Score", num: true },
-    { key: "owner", label: "Current owner" },
+    { key: "rank", label: "Rank", num: true, sort: true },
+    { key: "name", label: "Account", sort: true },
+    { key: "score", label: "Score", num: true, sort: true },
+    ...state.components.map((k) => ({
+      key: k, label: k.slice(COMPONENT_PREFIX.length), num: true, sort: true, comp: true })),
     { key: "activity", label: "Activity", num: true },
-    { key: "flags", label: "Flags" },
-    { key: "assign", label: "Assign to" },
+    ...(isPool ? [{ key: "held_by", label: "Held by" }] : []),
+    { key: "assign", label: "Owner" },
   ];
   $("#accounts-table thead").innerHTML = `<tr>${cols.map((c) =>
-    `<th class="${c.num ? "num" : ""} ${["flags", "assign", "activity"].includes(c.key) ? "" : "sortable"}"
-        data-key="${c.key}">${esc(c.label)}${state.sort.key === c.key
-        ? (state.sort.dir === -1 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>`;
+    `<th class="${c.num ? "num" : ""} ${c.sort ? "sortable" : ""} ${c.comp ? "comp-th" : ""}" ` +
+    `data-key="${esc(c.key)}"${c.comp ? ` title="Score component: ${esc(c.label)}"` : ""}>` +
+    `${esc(c.label)}${state.sort.key === c.key ? (state.sort.dir === -1 ? " ▾" : " ▴") : ""}</th>`
+  ).join("")}</tr>`;
   $$("#accounts-table th.sortable").forEach((th) => {
     th.onclick = () => {
       const k = th.dataset.key;
       state.sort = state.sort.key === k
         ? { key: k, dir: -state.sort.dir }
-        : { key: k, dir: (k === "name" || k === "owner" || k === "rank") ? 1 : -1 };
+        : { key: k, dir: (k === "name" || k === "rank") ? 1 : -1 };
       render();
     };
   });
 
-  const rows = filteredRows();
+  const rows = repViewRows();
   const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
   state.page = Math.min(state.page, pages - 1);
   const slice = rows.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
+  // Shade each component against the rest of this book, so a strong PLG or
+  // growth account stands out on the page.
+  const compBounds = Object.fromEntries(state.components.map((k) => {
+    const vs = book.map((r) => num(r[k]));
+    return [k, { min: Math.min(...vs), max: Math.max(...vs) }];
+  }));
 
-  $("#accounts-table tbody").innerHTML = slice.map((r) => {
-    const acts = num(r.meetings) + num(r.calls) + num(r.emails_out);
-    return `<tr data-id="${esc(r.org_id)}">
+  $("#accounts-table tbody").innerHTML = slice.length ? slice.map((r) => {
+    const acts = num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.messages);
+    const cust = isCustomer(r);
+    const comps = state.components.map((k) => {
+      const b = compBounds[k];
+      return r[k] === "" || r[k] == null ? `<td class="num comp-td matrix-empty">—</td>`
+        : `<td class="num comp-td"${heatStyleAttr(num(r[k]), b.min, b.max, "high")}>${fmt(r[k], 1)}</td>`;
+    }).join("");
+    return `<tr data-id="${esc(r.org_id)}"${cust ? ` class="customer-row"` : ""}>
       <td class="num">${accountRank(r) ? fmt(accountRank(r)) : "—"}</td>
       <td>${r.sumble_url
         ? `<a href="${esc(r.sumble_url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
-        : esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
-      <td>${esc(state.segLabel[r.account_segment] || r.account_segment || "—")}</td>
-      <td class="num">${fmt(r.size_metric)}</td>
-      <td class="num">${fmt(r.score, 1)}</td>
-      <td>${esc(r.owner || "—")}${num(r.double_allocated)
-        ? `<span class="cell-sub">also: ${esc(r.other_owners)}</span>` : ""}</td>
-      <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out">
+        : esc(r.name)}<span class="cell-sub">${esc(r.domain)}` +
+        `${cust ? ` · <span class="customer-tag">Customer</span>` : ""}</span></td>
+      <td class="num">${fmt(r.score, 1)}</td>${comps}
+      <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out · ${num(r.messages)} Slack messages">
         ${acts ? fmt(acts) : `<span class="zero">0</span>`}</td>
-      <td>${flagPills(r)}</td>
+      ${isPool ? `<td>${esc((r.held_by || "").split("|").filter(Boolean).join(", ") || "—")}</td>` : ""}
       <td class="assign-cell">${assignCell(r)}</td>
     </tr>`;
-  }).join("");
-  $$("#accounts-table tbody tr").forEach((tr) => {
-    tr.onclick = () => showDetail(tr.dataset.id);
+  }).join("") : `<tr><td colspan="${cols.length}" class="empty-state">` +
+    `${!book.length ? "No accounts yet. Open another rep or the Unallocated row and pick " +
+      `${esc(v.name)} in the Owner column.` :
+      state.repMode === "idle" ? "No idle accounts." :
+      state.repMode === "customers" ? "No customers." : "No accounts."}</td></tr>`;
+  $$("#accounts-table tbody tr[data-id]").forEach((tr) => {
+    tr.onclick = (e) => { if (!e.target.closest("a")) showDetail(tr.dataset.id); };
   });
-  // The assign dropdown and accept/reject live in the last column; stop the
-  // click bubbling up to the row (which would open the detail panel).
-  $$("#accounts-table .assign-select").forEach((sel) => {
+  wireAssignControls("#accounts-table");
+
+  $("#page-info").textContent = rows.length
+    ? `${fmt(state.page * state.pageSize + 1)}–${fmt(Math.min((state.page + 1) * state.pageSize, rows.length))} of ${fmt(rows.length)}`
+    : "";
+  $("#page-prev").disabled = state.page <= 0;
+  $("#page-next").disabled = state.page >= pages - 1;
+}
+
+/** The owner dropdown and its undo/dismiss link, in any table. Clicks stop
+ *  here so they don't open the account panel. */
+function wireAssignControls(scope) {
+  $$(`${scope} .assign-select`).forEach((sel) => {
     sel.onclick = (e) => e.stopPropagation();
     sel.onchange = (e) => {
       e.stopPropagation();
@@ -1136,54 +1000,84 @@ function renderAccounts() {
       else decide(sel.dataset.id, "manual", sel.value);
     };
   });
-  $$("#accounts-table .decide-btn").forEach((btn) => {
+  $$(`${scope} .decide-btn`).forEach((btn) => {
     btn.onclick = (e) => { e.stopPropagation(); decide(btn.dataset.id, btn.dataset.status); };
   });
-
-  $("#page-info").textContent = rows.length
-    ? `${fmt(state.page * state.pageSize + 1)}–${fmt(Math.min((state.page + 1) * state.pageSize, rows.length))} of ${fmt(rows.length)}`
-    : "no matching accounts";
-  $("#page-prev").disabled = state.page <= 0;
-  $("#page-next").disabled = state.page >= pages - 1;
 }
 
 function sizeLabel() {
   return state.rows[0]?.size_metric_name || "Size";
 }
 
-function renderExport() {
-  const approved = state.rows.filter(isApproved);
-  const pending = state.rows.filter((r) => r.proposal_status === "suggested").length;
-  $("#export-summary").innerHTML = `
-    <p><strong>${fmt(approved.length)}</strong> approved change${approved.length === 1 ? "" : "s"} ready to export.
-    ${pending ? `<strong>${fmt(pending)}</strong> proposal${pending === 1 ? " is" : "s are"} still undecided.` : ""}</p>
-    <p class="eval-diag-sub">actions.csv lists one row per owner change (from → to, with the reason
-      and the evidence). Nothing is written to your CRM by this app — the export is the hand-off.</p>`;
+const STATUS_LABELS = {
+  suggested: "Suggested", accepted: "Approved", manual: "Approved", rejected: "Dismissed",
+};
 
-  const cols = ["Account", "Segment", "From", "To", "Reason", "Score", ""];
-  $("#export-table thead").innerHTML = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
-  $("#export-table tbody").innerHTML = approved.length ? approved.map((r) => `<tr>
+/** What one log entry did, in words. */
+function logAction(e) {
+  const to = e.proposed_owner, from = e.owner || "unassigned";
+  if (e.requested === "manual") {
+    return e.status === "manual" ? `Moved from ${from} to ${to}` : "Move cleared";
+  }
+  if (e.requested === "accepted") return `Approved suggestion: ${from} → ${to}`;
+  if (e.requested === "rejected") return `Dismissed suggestion: ${from} → ${to}`;
+  return e.status === "suggested" ? `Undone, back to suggesting ${to}` : "Undone";
+}
+
+function renderChanges() {
+  const proposals = state.rows.filter((r) =>
+    r.proposed_owner && ["suggested", "accepted", "manual", "rejected"].includes(r.proposal_status));
+  const group = (r) => (r.proposal_status === "manual" ? "accepted" : r.proposal_status);
+  const counts = { approved: 0, suggested: 0, dismissed: 0 };
+  for (const r of proposals) {
+    const g = group(r);
+    if (g === "accepted") counts.approved++;
+    else if (g === "suggested") counts.suggested++;
+    else counts.dismissed++;
+  }
+  $("#changes-summary").innerHTML = `<p><strong>${fmt(counts.approved)}</strong> approved` +
+    ` (these go in actions.csv) · <strong>${fmt(counts.suggested)}</strong> awaiting a decision` +
+    ` · <strong>${fmt(counts.dismissed)}</strong> dismissed. Nothing is written to your CRM.</p>`;
+
+  const filters = [["all", "All", proposals.length], ["approved", "Approved", counts.approved],
+    ["suggested", "Suggested", counts.suggested], ["dismissed", "Dismissed", counts.dismissed]];
+  $("#changes-filters").innerHTML = `<div class="filter-row">` + filters.map(([k, label, n]) =>
+    `<button class="cat-chip ${state.changesFilter === k ? "active" : ""}" data-k="${k}">` +
+    `${label} <span class="cat-count">${fmt(n)}</span></button>`).join("") + `</div>`;
+  $$("#changes-filters [data-k]").forEach((el) => {
+    el.onclick = () => { state.changesFilter = el.dataset.k; render(); };
+  });
+
+  // Most recent decision first; undecided suggestions after, strongest first.
+  const lastAt = {};
+  for (const e of state.log) lastAt[e.org_id] = e.at;
+  const want = { all: null, approved: "accepted", suggested: "suggested", dismissed: "rejected" }[state.changesFilter];
+  const shown = proposals.filter((r) => !want || group(r) === want).sort((a, b) =>
+    String(lastAt[b.org_id] || "").localeCompare(String(lastAt[a.org_id] || "")) ||
+    num(b.score) - num(a.score));
+  const when = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+
+  const cols = ["When", "Account", "From", "To", "Reason", "Status", "Owner"];
+  $("#changes-table thead").innerHTML = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  $("#changes-table tbody").innerHTML = shown.length ? shown.map((r) => `<tr data-id="${esc(r.org_id)}">
+      <td>${esc(when(lastAt[r.org_id]))}</td>
       <td>${esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
-      <td>${esc(state.segLabel[r.account_segment] || r.account_segment)}</td>
       <td>${esc(r.owner || "(unassigned)")}</td>
       <td>${esc(r.proposed_owner)}</td>
       <td>${esc(REASON_LABELS[r.proposal_reason] || r.proposal_reason)}</td>
-      <td class="num">${fmt(r.score, 1)}</td>
-      <td class="num"><button class="dismiss-change btn-link" data-id="${esc(r.org_id)}"
-        data-status="${esc(r.proposal_status)}"
-        title="Drop this change from the export (reverts the account)">Dismiss</button></td>
+      <td>${esc(STATUS_LABELS[r.proposal_status] || r.proposal_status)}</td>
+      <td class="assign-cell">${assignCell(r)}</td>
     </tr>`).join("")
-    : `<tr><td colspan="${cols.length}" class="empty-state">Nothing approved yet — accept a
-        suggestion or assign an owner on the Accounts tab.</td></tr>`;
+    : `<tr><td colspan="${cols.length}" class="empty-state">No proposed changes yet. ` +
+      `Click a rep on the Overview to move their accounts.</td></tr>`;
+  $$("#changes-table tbody tr[data-id]").forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.id); });
+  wireAssignControls("#changes-table");
 
-  $$("#export-table .dismiss-change").forEach((btn) => {
-    btn.onclick = () => {
-      // A manual assignment is cleared (blank owner); an accepted suggestion is
-      // rejected so it won't be re-proposed. Either way it leaves the export.
-      if (btn.dataset.status === "manual") decide(btn.dataset.id, "manual", "");
-      else decide(btn.dataset.id, "rejected");
-    };
-  });
+  const logCols = ["When", "Account", "What happened"];
+  $("#log-table thead").innerHTML = `<tr>${logCols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  $("#log-table tbody").innerHTML = state.log.length ? [...state.log].reverse().map((e) => `<tr>
+      <td>${esc(when(e.at))}</td><td>${esc(e.name)}</td><td>${esc(logAction(e))}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty-state">No decisions yet.</td></tr>`;
 }
 
 function showDetail(orgId) {
@@ -1198,6 +1092,7 @@ function showDetail(orgId) {
   const acts = [
     ["Meetings", r.meetings], ["Calls", r.calls],
     ["Emails out", r.emails_out], ["Emails in", r.emails_in],
+    ["Slack messages", r.messages],
   ];
   const total = acts.reduce((a, [, v]) => a + num(v), 0);
   // Reassign from ANY account, not only rows the balancer proposed. Same
@@ -1226,24 +1121,22 @@ function showDetail(orgId) {
           ${ownerOptions}
         </select>
       </p>
-      ${num(r.worked) ? `<p class="eval-diag-sub">⚠ ${esc(r.owner)} has worked this account in the window —
-        the balancer would never move it, so a move here is deliberately your call.</p>` : ""}
+      ${num(r.worked) ? `<p class="eval-diag-sub">⚠ Being worked: the balancer won't move it.</p>` : ""}
     </div>
     <div class="detail-section">
-      <h3>Activity with this owner · last ${fmt(state.plan.activity?.window_days || 90)} days</h3>
+      <h3>Activity · last ${fmt(state.plan.activity?.window_days || 90)} days</h3>
       ${total ? `<table class="detail-table"><tbody>${acts.map(([k, v]) =>
         `<tr><td>${k}</td><td class="num">${fmt(v)}</td></tr>`).join("")}
         <tr><td>Last touch</td><td class="num">${esc(r.last_activity_date || "—")}</td></tr>
         <tr><td>Sources</td><td class="num">${esc((r.activity_sources || "").split("|").join(", ") || "—")}</td></tr>
         </tbody></table>`
-        : `<p class="empty-state">No recorded activity between this owner and this account.
-           That is what makes it eligible to be reassigned.</p>`}
-      <p class="eval-diag-sub">Counts are between <em>this owner</em> and this account only —
-        not the whole team.</p>
+        : `<p class="empty-state">No activity in the window.</p>`}
+      <p class="eval-diag-sub">${state.plan.activity?.attribution === "anyone"
+        ? "Anyone at the company." : "The owner only."}</p>
     </div>
     <div class="detail-section">
       <h3>Flags</h3>
-      <p>${flagPills(r) || "<span class='eval-diag-sub'>None — owned, in the right segment, and being worked.</span>"}</p>
+      <p>${flagPills(r) || "<span class='eval-diag-sub'>None.</span>"}</p>
     </div>`;
   const sel = $("#detail-owner-select");
   if (sel) {
@@ -1273,66 +1166,267 @@ async function decide(orgId, status, proposedOwner) {
   }
   const out = await res.json();
   Object.assign(row, out.row);
+  if (out.log_entry) state.log.push(out.log_entry);
+  render();
+}
+
+/** Show a tab: "overview" or "changes". A rep's book opens as a sheet over
+ *  the Overview (openRep), not as a view. */
+function showView(view) {
+  state.tab = view;
+  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === view));
+  $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== `view-${view}`));
+  $("#tab-description").textContent = PAGE_DESCRIPTIONS[view] || "";
   render();
 }
 
 function switchTab(tab) {
-  state.tab = tab;
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
-  $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== `view-${tab}`));
-  $("#tab-description").textContent = PAGE_DESCRIPTIONS[tab] || "";
-  render();
+  closeRep();
+  showView(tab);
 }
 
 function render() {
   computeStrongSet();  // refresh the "strong" set for the attention flags
-  renderCalibrate(); // the sidebar is always visible, independent of the tab
   if (state.tab === "overview") renderOverview();
-  else if (state.tab === "accounts") renderAccounts();
-  else if (state.tab === "export") renderExport();
+  else if (state.tab === "changes") renderChanges();
+  // The sheet sits over the Overview, which re-renders under it on each move.
+  if (state.repView) renderRep();
+}
+
+const HOLD = "__hold";
+
+/** The panel's starting point: the plan as it stands. */
+function draftFromPlan() {
+  const b = state.plan.boundary || {};
+  const mins = Object.fromEntries((b.thresholds || []).map((t) => [t.segment, t.min]));
+  const roster = {};
+  for (const r of state.plan.reps || []) {
+    roster[r.name] = { is_rep: !!r.is_rep, segment: r.segment || "", in_balance: r.in_balance !== false };
+  }
+  for (const name of Object.keys(state.owners)) {
+    if (!roster[name]) roster[name] = { is_rep: false, segment: "", in_balance: true };
+  }
+  return {
+    metric: b.metric || "",
+    segments: state.segments.map((seg, i) => ({
+      key: seg.key, label: seg.label || seg.key,
+      min: i === 0 ? null : (mins[seg.key] ?? null),
+      target: num(seg.default_capacity) || "",
+    })),
+    roster,
+  };
+}
+
+function draftDirty() {
+  return JSON.stringify(state.draft) !== JSON.stringify(draftFromPlan());
+}
+
+/** Each account's value on a cutoff metric (the sheet carries one column per option). */
+function metricValue(r, metric) {
+  const col = `metric:${metric}`;
+  return col in r ? num(r[col]) : num(r.size_metric);
+}
+
+/** Accounts per segment under the draft, for the live counts in the panel. */
+function draftCounts() {
+  const d = state.draft;
+  const ordered = d.segments.map((sg, i) => ({ i, min: i === 0 || sg.min === "" || sg.min == null ? -Infinity : num(sg.min) }))
+    .sort((a, b) => a.min - b.min);
+  const counts = d.segments.map(() => 0);
+  for (const r of state.rows) {
+    if (isWhitespace(r)) continue;
+    const v = metricValue(r, d.metric);
+    let at = ordered[0].i;
+    for (const o of ordered) if (v >= o.min) at = o.i;
+    counts[at] += 1;
+  }
+  return counts;
+}
+
+/** A round number near v: two significant figures. */
+function roundish(v) {
+  if (!(v > 0)) return 0;
+  const p = Math.pow(10, Math.floor(Math.log10(v)) - 1);
+  return Math.round(v / p) * p;
+}
+
+/** Switching the metric keeps each segment's share of accounts: each line
+ *  moves to the value on the new metric with the same share above it. */
+function remapMins(oldMetric, newMetric) {
+  const real = state.rows.filter((r) => !isWhitespace(r));
+  const oldV = real.map((r) => metricValue(r, oldMetric));
+  const newV = real.map((r) => metricValue(r, newMetric));
+  for (const sg of state.draft.segments.slice(1)) {
+    if (sg.min === "" || sg.min == null) continue;
+    const share = oldV.filter((v) => v < num(sg.min)).length / Math.max(1, oldV.length);
+    sg.min = roundish(quantile(newV, Math.min(0.999, share)));
+  }
+}
+
+function renderConfigPanel() {
+  const d = state.draft;
+  const opts = (state.plan.boundary || {}).options || [];
+  const metricLabel = (opts.find((o) => o.metric === d.metric) || {}).label ||
+    (state.plan.boundary || {}).label || "the metric";
+  const counts = draftCounts();
+  const segHtml = d.segments.map((sg, i) => `
+    <div class="seg-edit" data-i="${i}">
+      <div class="seg-edit-head">
+        <input class="terr-input seg-label" value="${esc(sg.label)}" aria-label="Segment name" />
+        ${d.segments.length > 1 ? `<button class="btn-link seg-remove" type="button" title="Remove this segment">Remove</button>` : ""}
+      </div>
+      ${i === 0
+        ? (d.segments.length > 1 ? `<p class="seg-floor">Everything below the next segment</p>` : "")
+        : `<label class="cal-field"><span>From ${esc(metricLabel)} ≥</span>
+            <input type="number" min="0" class="terr-input seg-min" value="${sg.min ?? ""}" /></label>`}
+      <label class="cal-field"><span>Target accounts per rep</span>
+        <input type="number" min="1" step="1" class="terr-input seg-target" value="${sg.target}" /></label>
+      <p class="seg-count">${fmt(counts[i])} accounts</p>
+    </div>`).join("");
+
+  const segOrder = Object.fromEntries(d.segments.map((sg, i) => [sg.key, i]));
+  const people = Object.entries(d.roster).sort(([an, a], [bn, b]) =>
+    (b.is_rep - a.is_rep) || ((segOrder[a.segment] ?? 99) - (segOrder[b.segment] ?? 99)) ||
+    ((state.owners[bn] || 0) - (state.owners[an] || 0)) || an.localeCompare(bn));
+  const teamHtml = people.map(([name, r]) => {
+    const role = r.is_rep ? r.segment : HOLD;
+    const options = d.segments.map((sg) =>
+      `<option value="${esc(sg.key)}" ${role === sg.key ? "selected" : ""}>${esc(d.segments.length > 1 ? sg.label : "Rep")}</option>`).join("") +
+      `<option value="${HOLD}" ${role === HOLD ? "selected" : ""}>Holds accounts</option>`;
+    return `<tr data-name="${esc(name)}">
+      <td>${esc(name)}<span class="cell-sub">${fmt(state.owners[name] || 0)} accounts in the CRM</span></td>
+      <td><select class="team-role" aria-label="Role for ${esc(name)}">${options}</select>
+        ${r.is_rep ? `<label class="team-bal" title="Off for a player-coach: they keep their accounts but are never compared or moved off">
+          <input type="checkbox" class="team-balance" ${r.in_balance ? "checked" : ""}/> balanced</label>` : ""}</td>
+    </tr>`;
+  }).join("");
+
+  const dirty = draftDirty();
+  $("#config-panel").innerHTML = `
+    <div class="panel-header"><h2>Segments</h2></div>
+    <p class="panel-sub">What puts an account in a segment, and how many accounts each rep should carry.
+      The target is also the top N the distance compares.</p>
+    ${opts.length > 1 ? `<label class="cal-field cal-field-wide"><span>Cut by</span>
+      <select id="cfg-metric" class="terr-input">${opts.map((o) =>
+        `<option value="${esc(o.metric)}" ${o.metric === d.metric ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select></label>` : ""}
+    ${segHtml}
+    <button id="seg-add" class="btn-link" type="button">+ Add segment</button>
+
+    <div class="panel-header panel-header-gap"><h2>Team</h2></div>
+    <p class="panel-sub">Everyone whose name is on accounts in the CRM. <b>Holds accounts</b> means
+      their accounts count as unallocated, for a leader or founder warehousing them.</p>
+    <table class="team-table"><tbody>${teamHtml}</tbody></table>
+
+    <div class="calibrate-actions">
+      <button id="cfg-apply" class="btn-download" type="button" ${dirty ? "" : "disabled"}>Apply</button>
+      <button id="cfg-reset" class="btn-link" type="button" ${dirty ? "" : "disabled"}>Reset</button>
+      <span id="cfg-status" class="cfg-status">${dirty ? "Unsaved changes" : ""}</span>
+    </div>`;
+
+  const changed = () => renderConfigPanel();
+  $$("#config-panel .seg-edit").forEach((el) => {
+    const sg = d.segments[Number(el.dataset.i)];
+    el.querySelector(".seg-label").oninput = (e) => { sg.label = e.target.value; };
+    el.querySelector(".seg-label").onchange = changed;
+    const min = el.querySelector(".seg-min");
+    if (min) min.onchange = (e) => { sg.min = e.target.value === "" ? null : num(e.target.value); changed(); };
+    el.querySelector(".seg-target").onchange = (e) => { sg.target = Math.max(1, Math.floor(num(e.target.value))) || ""; changed(); };
+    const rm = el.querySelector(".seg-remove");
+    if (rm) rm.onclick = () => {
+      const i = Number(el.dataset.i);
+      const into = d.segments[i === 0 ? 1 : i - 1].key;
+      for (const r of Object.values(d.roster)) if (r.segment === sg.key) r.segment = into;
+      d.segments.splice(i, 1);
+      d.segments[0].min = null;
+      changed();
+    };
+  });
+  $("#seg-add").onclick = () => {
+    const last = d.segments[d.segments.length - 1];
+    const vals = state.rows.filter((r) => !isWhitespace(r)).map((r) => metricValue(r, d.metric));
+    const above = vals.filter((v) => last.min == null || v >= num(last.min));
+    d.segments.push({
+      key: `new-${d.segments.length}-${Date.now()}`, label: "New segment",
+      min: roundish(quantile(above, 0.5)) || 1, target: last.target || "",
+    });
+    changed();
+  };
+  const metricSel = $("#cfg-metric");
+  if (metricSel) metricSel.onchange = (e) => { remapMins(d.metric, e.target.value); d.metric = e.target.value; changed(); };
+  $$("#config-panel .team-table tr").forEach((tr) => {
+    const r = d.roster[tr.dataset.name];
+    tr.querySelector(".team-role").onchange = (e) => {
+      if (e.target.value === HOLD) r.is_rep = false;
+      else { r.is_rep = true; r.segment = e.target.value; }
+      changed();
+    };
+    const bal = tr.querySelector(".team-balance");
+    if (bal) bal.onchange = (e) => { r.in_balance = e.target.checked; changed(); };
+  });
+  $("#cfg-reset").onclick = () => { state.draft = draftFromPlan(); renderConfigPanel(); };
+  $("#cfg-apply").onclick = applyConfig;
+}
+
+async function applyConfig() {
+  const d = state.draft;
+  $("#cfg-apply").disabled = true;
+  $("#cfg-status").textContent = "Applying…";
+  const res = await fetch("/api/config", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      metric: d.metric,
+      segments: d.segments.map((sg, i) => ({
+        key: sg.key, label: sg.label, min: i === 0 ? null : sg.min, target: sg.target || null,
+      })),
+      roster: Object.entries(d.roster).map(([name, r]) => ({ name, ...r })),
+    }),
+  });
+  if (!res.ok) {
+    $("#cfg-status").textContent = `Couldn't apply: ${res.statusText || res.status}`;
+    $("#cfg-apply").disabled = false;
+    return;
+  }
+  const out = await res.json();
+  loadData(out);
+  state.draft = draftFromPlan();
+  renderConfigPanel();
+  render();
+  const moves = (out.report && out.report.moves && out.report.moves.total) || 0;
+  $("#cfg-status").textContent = `Applied · ${fmt(moves)} suggested moves`;
+}
+
+/** Read a /api/plan or /api/config response into state. */
+function loadData(data) {
+  state.plan = data.plan;
+  state.rows = data.rows;
+  state.owners = data.owners || {};
+  state.components = Object.keys(data.rows[0] || {}).filter((k) => k.startsWith(COMPONENT_PREFIX));
+  state.segments = (data.plan.segments || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  state.segLabel = Object.fromEntries(state.segments.map((x) => [x.key, x.label]));
+  state.reps = (data.plan.reps || []).filter((r) => r.is_rep);
+  state.repByName = Object.fromEntries(state.reps.map((r) => [r.name, r]));
+  state.strongCutoff = num(data.plan.strong_cutoff) || 500;
+  const owned = state.rows.filter((r) => r.owner).length;
+  $("#row-summary").textContent =
+    `${fmt(state.rows.length)} accounts · ${fmt(state.reps.length)} reps · ${fmt(owned)} allocated`;
 }
 
 async function init() {
   const res = await fetch("/api/plan");
   const data = await res.json();
-  state.plan = data.plan;
-  state.rows = data.rows;
-  state.segments = (data.plan.segments || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
-  state.segLabel = Object.fromEntries(state.segments.map((s) => [s.key, s.label]));
-  state.reps = (data.plan.reps || []).filter((r) => r.is_rep);
-  state.repByName = Object.fromEntries(state.reps.map((r) => [r.name, r]));
-  state.strongCutoff = num(data.plan.strong_cutoff) || 500;
+  loadData(data);
+  state.log = data.log || [];
+  state.draft = draftFromPlan();
+  renderConfigPanel();
 
   const company = (data.plan.company || {}).name || "Territory";
   $("#customer-name").textContent = `${company} territory plan`;
-  const owned = state.rows.filter((r) => r.owner).length;
-  $("#row-summary").textContent =
-    `${fmt(state.rows.length)} accounts · ${fmt(state.reps.length)} reps · ${fmt(owned)} allocated`;
-
-  $("#rep-filter").innerHTML = `<option value="">All reps</option>` +
-    state.reps.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join("");
-  $("#segment-filter").innerHTML = `<option value="">All segments</option>` +
-    state.segments.map((s) => `<option value="${esc(s.key)}">${esc(s.label)}</option>`).join("");
-
   $$(".tab").forEach((t) => { t.onclick = () => switchTab(t.dataset.tab); });
-  $("#calibrate-reset-fields").onclick = () => {
-    // Put every field back to the plan's saved values: the segment/capacity
-    // inputs (rebuilt from the plan) and the strong-account cutoff.
-    state.strongCutoff = num(state.plan.strong_cutoff) || 500;
-    $("#strong-cutoff").value = state.strongCutoff;
-    $("#calibrate-controls").dataset.built = "";
-    $("#calibrate-status").textContent = "";
-    render();
-  };
-  $("#strong-cutoff").value = state.strongCutoff;
-  $("#strong-cutoff").oninput = (e) => {
-    state.strongCutoff = Math.max(1, num(e.target.value) || 500);
-    state.page = 0;
-    render();
-  };
+  // The strong-account cutoff is not editable in the app; it comes from the
+  // plan's strong_cutoff.
   $("#search-input").oninput = (e) => { state.search = e.target.value; state.page = 0; render(); };
-  $("#rep-filter").onchange = (e) => { state.repFilter = e.target.value; state.page = 0; render(); };
-  $("#segment-filter").onchange = (e) => { state.segmentFilter = e.target.value; state.page = 0; render(); };
+  $("#rep-close").onclick = closeRep;
+  $("#rep-sheet-backdrop").onclick = closeRep;
   $("#page-prev").onclick = () => { state.page = Math.max(0, state.page - 1); render(); };
   $("#page-next").onclick = () => { state.page += 1; render(); };
   $("#detail-close").onclick = () => $("#detail-panel").classList.add("hidden");
@@ -1343,10 +1437,14 @@ async function init() {
   $("#export-sheet-2").onclick = () => dl("/api/territory.csv");
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && document.activeElement !== $("#search-input")) {
-      if (state.tab !== "accounts") switchTab("accounts");
+      if (!state.repView) return;
       e.preventDefault(); $("#search-input").focus();
     }
-    if (e.key === "Escape") $("#detail-panel").classList.add("hidden");
+    // Esc closes the top layer first: the account panel, then the sheet.
+    if (e.key === "Escape") {
+      if (!$("#detail-panel").classList.contains("hidden")) $("#detail-panel").classList.add("hidden");
+      else if (state.repView) closeRep();
+    }
   });
 
   switchTab("overview");

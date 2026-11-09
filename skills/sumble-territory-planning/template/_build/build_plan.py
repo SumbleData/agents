@@ -35,13 +35,13 @@ def main() -> None:
     out_path = Path(args.out).expanduser() if args.out else raw.parent / "territory-plan.json"
 
     segments = sorted(spec.get("segments") or [], key=lambda s: tl.to_int(s.get("order"), 0))
-    if len(segments) < 2:
-        sys.exit("[plan] spec.segments needs at least two segments.")
+    if not segments:
+        sys.exit("[plan] spec.segments needs at least one segment.")
     seg_keys = {str(s.get("key")) for s in segments}
 
     boundary = dict(spec.get("boundary") or {})
     thresholds = boundary.get("thresholds") or []
-    if not thresholds:
+    if not thresholds and len(segments) > 1:
         sys.exit(
             "[plan] boundary.thresholds is empty. Run calibrate_split.py, confirm the "
             "line with the user, and write it into spec.json before building the plan."
@@ -111,6 +111,9 @@ def main() -> None:
                     if str(s.get("default_capacity") or "").strip()
                     else None
                 ),
+                # How many of each rep's best accounts the Kolmogorov-Smirnov
+                # distance compares. Tunable live in the app's sidebar.
+                "ks_top_n": tl.ks_top_n_for(s),
             }
             for i, s in enumerate(segments)
         ],
@@ -131,6 +134,9 @@ def main() -> None:
             # Optional end of the window (YYYY-MM-DD). Unset means today; a fixed
             # date replays a snapshot, such as the public demo's synthetic calendar.
             "as_of": str(activity.get("as_of") or ""),
+            # Whose events mark an account worked: the owner's own ("owner",
+            # the default) or anyone at the seller ("anyone").
+            "attribution": str(activity.get("attribution") or "owner"),
             "company_domain": company_domain,
             "freemail_excludes": sorted(tl.FREEMAIL_DOMAINS),
         },
@@ -150,9 +156,6 @@ def main() -> None:
         },
         "strong_cutoff": tl.to_int(
             spec.get("strong_cutoff"), tl.DEFAULT_STRONG_CUTOFF
-        ),
-        "tier_decile_weight": tl.to_int(
-            spec.get("tier_decile_weight"), tl.DEFAULT_TIER_DECILE_WEIGHT
         ),
         "territory_csv": "territory.csv",
     }

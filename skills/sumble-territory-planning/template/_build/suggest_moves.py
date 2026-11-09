@@ -61,7 +61,7 @@ def main() -> None:
         sys.exit("[moves] territory.csv is empty.")
 
     report = tl.suggest_moves(plan, rows, reset=args.reset)
-    tl.write_csv(csv_path, rows, tl.TERRITORY_COLUMNS)
+    tl.write_csv(csv_path, rows, tl.territory_columns(rows))
 
     counts = report["counts"]
     segments = plan["segments"]
@@ -119,8 +119,8 @@ def main() -> None:
         )
         print(
             f"[moves] NOTE: unowned accounts left unassigned because every rep is at "
-            f"capacity — {detail}. Raise the segment's default_capacity (in the app's "
-            "Calibrate panel, or territory-plan.json) to route more."
+            f"capacity — {detail}. Raise the segment's default_capacity (in spec.json, "
+            "then re-run the pipeline) to route more."
         )
 
 

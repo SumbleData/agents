@@ -17,12 +17,15 @@ from __future__ import annotations
 import base64
 import csv
 import gzip
+import hashlib
 import hmac
 import io
 import json
 import os
+import shutil
 import sys
 import threading
+from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
@@ -30,8 +33,23 @@ from typing import Any
 import territory_lib as tl
 
 APP_DIR = Path(__file__).resolve().parent
-PLAN_PATH = APP_DIR / "territory-plan.json"
 STATIC_DIR = APP_DIR / "static"
+# Where the plan, the sheet and the decision log are read and written. Locally
+# it is the app folder. On a host whose disk resets on restart (fly.io, Cloud
+# Run), point DATA_DIR at a persistent volume: the app seeds it from the files
+# shipped in the image and keeps every decision there.
+DATA_DIR = Path(os.environ.get("DATA_DIR") or APP_DIR).resolve()
+PLAN_PATH = DATA_DIR / "territory-plan.json"
+# One JSON line per decision made in the app, oldest first. The Changes tab
+# shows it newest first, and startup replays it (see State.replay_log), so a
+# rebuilt territory.csv or a redeploy keeps every decision.
+LOG_PATH = DATA_DIR / "changes.jsonl"
+# The hash of the image's territory.csv that DATA_DIR was last seeded from.
+SEED_MARK = DATA_DIR / ".seeded_from"
+# The Segments and Team panel's last applied settings. Startup re-applies them,
+# so a pipeline re-run or a redeploy keeps what people set in the app. Delete
+# it to go back to the plan the pipeline wrote.
+CONFIG_PATH = DATA_DIR / "panel-config.json"
 
 # Statuses the UI may set. "suggested" is the pipeline's own output and is not
 # settable from the app — a user either accepts it, rejects it, or overrides the
@@ -41,94 +59,146 @@ VALID_STATUSES = {"accepted", "rejected", "manual", ""}
 _LOCK = threading.Lock()
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
+
+
+def seed_data_dir() -> None:
+    """Copy the image's plan and sheet into DATA_DIR when they are new.
+
+    The image is what was deployed; DATA_DIR is what survives restarts. A
+    sheet that differs from the one last seeded means fresh data was
+    deployed, so it replaces the working copy and the log is replayed onto
+    it. A decision log shipped in the image seeds an empty volume once.
+    """
+    if DATA_DIR == APP_DIR:
+        return
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    plan_src = APP_DIR / "territory-plan.json"
+    plan = tl.read_json(plan_src) if plan_src.exists() else {}
+    csv_name = plan.get("territory_csv") or "territory.csv"
+    stamp = _sha256(APP_DIR / csv_name)
+    seeded = SEED_MARK.read_text(encoding="utf-8").strip() if SEED_MARK.exists() else ""
+    if stamp and stamp != seeded:
+        for name in ("territory-plan.json", csv_name):
+            if (APP_DIR / name).exists():
+                shutil.copyfile(APP_DIR / name, DATA_DIR / name)
+        SEED_MARK.write_text(stamp, encoding="utf-8")
+        print(f"[seed] {DATA_DIR} ← {csv_name} from the image", file=sys.stderr)
+    for name, dest in (("changes.jsonl", LOG_PATH), ("panel-config.json", CONFIG_PATH)):
+        if not dest.exists() and (APP_DIR / name).exists():
+            shutil.copyfile(APP_DIR / name, dest)
+
+
 class State:
     """The plan + sheet, kept in memory and written through on every decision."""
 
     def __init__(self) -> None:
+        seed_data_dir()
         if not PLAN_PATH.exists():
             raise FileNotFoundError(
                 f"{PLAN_PATH.name} not found at {PLAN_PATH}. "
                 "Generate it via the sumble-territory-planning skill."
             )
         self.plan: dict[str, Any] = tl.read_json(PLAN_PATH)
-        self.csv_path = APP_DIR / (self.plan.get("territory_csv") or "territory.csv")
+        self.csv_path = DATA_DIR / (self.plan.get("territory_csv") or "territory.csv")
         if not self.csv_path.exists():
             raise FileNotFoundError(
                 f"{self.csv_path.name} not found — run merge_territory.py first."
             )
         self.rows: list[dict[str, Any]] = tl.read_csv(self.csv_path)
         self.by_id: dict[str, dict[str, Any]] = {str(r.get("org_id")): r for r in self.rows}
+        self.log: list[dict[str, Any]] = []
+        if LOG_PATH.exists():
+            for line in LOG_PATH.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    self.log.append(json.loads(line))
+        self.reapply_config()
+        self.replay_log()
+
+    def reapply_config(self) -> None:
+        """Re-apply the panel's saved settings when the plan or sheet no
+        longer reflects them (a pipeline re-run, a redeploy). A no-op when
+        they already match."""
+        if not CONFIG_PATH.exists():
+            return
+        config = tl.read_json(CONFIG_PATH)
+        before = json.dumps(self.plan, sort_keys=True)
+        owners = [(r.get("owner"), r.get("account_segment")) for r in self.rows]
+        try:
+            tl.apply_config(self.plan, self.rows, config)
+        except ValueError as e:
+            print(f"[config] could not re-apply {CONFIG_PATH.name}: {e}", file=sys.stderr)
+            return
+        after = [(r.get("owner"), r.get("account_segment")) for r in self.rows]
+        if json.dumps(self.plan, sort_keys=True) != before or after != owners:
+            tl.suggest_moves(self.plan, self.rows)
+            self.save()
+            self.save_plan()
+            print(f"[config] re-applied {CONFIG_PATH.name}", file=sys.stderr)
+
+    def replay_log(self) -> None:
+        """Re-apply each account's latest decision from the log.
+
+        merge_territory.py writes a fresh territory.csv with no decisions in
+        it, and a redeploy may seed one. Replaying the log puts the user's
+        moves back. When it already matches (the usual restart) nothing
+        changes. A move the CRM has since made (the account's owner is now
+        the proposed owner) is done, so it is cleared rather than replayed.
+        Delete changes.jsonl to start the plan over.
+        """
+        latest: dict[str, dict[str, Any]] = {}
+        for entry in self.log:
+            latest[str(entry.get("org_id"))] = entry
+        changed = missing = done = 0
+        for org_id, entry in latest.items():
+            row = self.by_id.get(org_id)
+            if row is None:
+                missing += 1
+                continue
+            want = {
+                "proposed_owner": entry.get("proposed_owner") or "",
+                "proposal_status": entry.get("status") or "",
+                "proposal_reason": entry.get("reason") or "",
+            }
+            if want["proposed_owner"] and want["proposed_owner"] == (row.get("owner") or ""):
+                want = {"proposed_owner": "", "proposal_status": "", "proposal_reason": ""}
+                done += 1
+            if any(str(row.get(k) or "") != v for k, v in want.items()):
+                row.update(want)
+                changed += 1
+        if changed:
+            self.save()
+        if changed or missing or done:
+            print(
+                f"[replay] {len(latest):,} accounts in changes.jsonl · {changed:,} restored · "
+                f"{done:,} already moved in the CRM · {missing:,} no longer in the sheet",
+                file=sys.stderr,
+            )
 
     # -- persistence -------------------------------------------------------
 
     def save(self) -> None:
-        tl.write_csv(self.csv_path, self.rows, tl.TERRITORY_COLUMNS)
+        tl.write_csv(self.csv_path, self.rows, tl.territory_columns(self.rows))
 
     def save_plan(self) -> None:
         tl.write_json(PLAN_PATH, self.plan)
 
-    # -- calibration -------------------------------------------------------
+    # -- configuration -----------------------------------------------------
 
-    def calibrate(
-        self,
-        thresholds: dict[str, Any] | None,
-        capacities: dict[str, Any] | None,
-        reset: bool = False,
-    ) -> dict[str, Any]:
-        """Move the segment boundary and/or the per-segment capacity, then
-        re-derive everything downstream.
+    def configure(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Apply the Segments and Team panel: the cutoff metric, the segments
+        with their starting values and target accounts per rep, and who is a
+        rep versus who only holds accounts. Then refresh the suggestions.
 
-        This is the whole point of the app being a calibration tool rather than
-        a report: the boundary decides which segment an account is in (and so
-        what counts as a misfit), and capacity decides how many accounts a rep
-        can absorb. Both are judgement calls that only make sense to tune while
-        watching the books move.
-
-        Runs the SAME `territory_lib.suggest_moves` engine the CLI runs, so the
-        app can never drift from the pipeline. Decisions the user has already
-        made survive unless `reset` is asked for.
+        Runs the same territory_lib routines the pipeline runs, so the app
+        can't drift from it. Decisions the user already made are kept.
         """
-        segments = self.plan["segments"]
-        seg_keys = {str(s["key"]) for s in segments}
-
-        if thresholds:
-            existing = {str(t["segment"]): t for t in self.plan["boundary"]["thresholds"]}
-            for key, value in thresholds.items():
-                if str(key) not in seg_keys:
-                    raise ValueError(f"unknown segment: {key!r}")
-                if str(value).strip() == "":
-                    existing.pop(str(key), None)
-                    continue
-                val = tl.to_float(value)
-                if val < 0:
-                    raise ValueError("a segment threshold cannot be negative")
-                existing[str(key)] = {"segment": str(key), "min": val}
-            if not existing:
-                raise ValueError(
-                    "at least one segment needs a threshold, or every account "
-                    "lands in the smallest segment"
-                )
-            self.plan["boundary"]["thresholds"] = sorted(
-                existing.values(), key=lambda t: -tl.to_float(t["min"])
-            )
-
-        if capacities:
-            for key, value in capacities.items():
-                if str(key) not in seg_keys:
-                    raise ValueError(f"unknown segment: {key!r}")
-                for seg in segments:
-                    if str(seg["key"]) == str(key):
-                        blank = str(value).strip() == ""
-                        seg["default_capacity"] = None if blank else tl.to_int(value)
-            # A rep's own capacity still wins; re-resolve so the mover and the
-            # UI read the same number.
-            for rep in self.plan["reps"]:
-                rep["effective_capacity"] = tl.effective_capacity(rep, segments)
-
-        tl.recompute_segments(self.plan, self.rows)
-        report = tl.suggest_moves(self.plan, self.rows, reset=reset)
+        report = tl.apply_config(self.plan, self.rows, config)
+        report["moves"] = tl.suggest_moves(self.plan, self.rows)
         self.save()
         self.save_plan()
+        tl.write_json(CONFIG_PATH, config)
         return report
 
     def decide(
@@ -158,7 +228,24 @@ class State:
         else:
             row["proposal_status"] = status
         self.save()
+        self._append_log(row, status)
         return row
+
+    def _append_log(self, row: dict[str, Any], requested: str) -> None:
+        """Record what was asked for and where the account ended up."""
+        entry = {
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "org_id": str(row.get("org_id")),
+            "name": row.get("name") or "",
+            "requested": requested,
+            "owner": row.get("owner") or "",
+            "proposed_owner": row.get("proposed_owner") or "",
+            "status": row.get("proposal_status") or "",
+            "reason": row.get("proposal_reason") or "",
+        }
+        self.log.append(entry)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
 
     # -- export ------------------------------------------------------------
 
@@ -247,7 +334,10 @@ class Handler(SimpleHTTPRequestHandler):
             return super().do_GET()
         if self.path == "/api/plan":
             with _LOCK:
-                return self._send_json({"plan": STATE.plan, "rows": STATE.rows})
+                return self._send_json(
+                    {"plan": STATE.plan, "rows": STATE.rows, "log": STATE.log,
+                     "owners": tl.owner_counts(STATE.rows)}
+                )
         if self.path == "/api/export":
             with _LOCK:
                 body = STATE.actions_csv()
@@ -261,7 +351,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 (stdlib name)
         if not self._require_auth():
             return
-        if self.path not in ("/api/decide", "/api/calibrate"):
+        if self.path not in ("/api/decide", "/api/config"):
             self.send_error(404, "not found")
             return
         try:
@@ -271,23 +361,20 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(400, f"bad request: {e}")
             return
 
-        if self.path == "/api/calibrate":
+        if self.path == "/api/config":
             try:
                 with _LOCK:
-                    report = STATE.calibrate(
-                        body.get("thresholds") or {},
-                        body.get("capacities") or {},
-                        reset=bool(body.get("reset")),
-                    )
+                    report = STATE.configure(body)
             except ValueError as e:
                 self.send_error(400, str(e))
                 return
             except OSError as e:
                 self.send_error(500, f"could not write the plan: {e}")
                 return
-            return self._send_json(
-                {"ok": True, "report": report, "plan": STATE.plan, "rows": STATE.rows}
-            )
+            return self._send_json({
+                "ok": True, "report": report, "plan": STATE.plan, "rows": STATE.rows,
+                "owners": tl.owner_counts(STATE.rows),
+            })
 
         try:
             with _LOCK:
@@ -305,7 +392,7 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError as e:
             self.send_error(500, f"could not write territory.csv: {e}")
             return
-        self._send_json({"ok": True, "row": row})
+        self._send_json({"ok": True, "row": row, "log_entry": STATE.log[-1]})
 
     def _send_json(self, data: Any) -> None:
         body = json.dumps(data, default=str).encode("utf-8")

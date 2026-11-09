@@ -44,6 +44,11 @@ CATEGORY_RANK = {
 WHITESPACE_CATEGORIES = {"whitespace", "whitespace_subsidiary"}
 
 
+def component_values(r: dict) -> dict[str, str]:
+    """The optional "component:<name>" score-breakdown columns of one row."""
+    return {k: v for k, v in r.items() if str(k).startswith(tl.COMPONENT_PREFIX)}
+
+
 def load_account_table(raw: Path, plan: dict) -> tuple[list[dict], str, str]:
     """(rows, score column, score source label)."""
     source = plan.get("score_source") or {}
@@ -87,9 +92,11 @@ def main() -> None:
     acct_rows, score_col, score_source = load_account_table(raw, plan)
     if not acct_rows:
         sys.exit("[merge] the account table is empty.")
-    size_col = tl.prepare_boundary_metric(
-        {"boundary": boundary}, acct_rows, tl.read_csv(raw / "ownership.csv")
-    )
+    ownership_rows = tl.read_csv(raw / "ownership.csv")
+    size_col = tl.prepare_boundary_metric({"boundary": boundary}, acct_rows, ownership_rows)
+    # Every metric the Segments panel may switch the cutoff to, carried per
+    # row as metric:<name> and listed in the plan.
+    options = tl.metric_options(plan, acct_rows, ownership_rows, score_col)
     if size_col not in acct_rows[0]:
         sys.exit(
             f"[merge] boundary column '{size_col}' is missing from the account table. "
@@ -116,12 +123,20 @@ def main() -> None:
                 "score": tl.to_float(r.get(score_col)),
                 "size_metric": tl.to_float(r.get(size_col)),
                 "sumble_url": r.get("sumble_url") or "",
+                "components": component_values(r),
+                "metrics": {o["column"]: tl.to_float(r.get(o["column"])) for o in options},
             }
             orgs[org_id] = rec
         else:
             # Keep the strongest category and the highest score seen for the org.
             if CATEGORY_RANK.get(cat, 0) > CATEGORY_RANK.get(rec["account_category"], 0):
                 rec["account_category"] = cat
+            # The breakdown follows whichever record supplies the score.
+            if tl.to_float(r.get(score_col)) > rec["score"]:
+                rec["components"] = component_values(r)
+            for o in options:
+                col = o["column"]
+                rec["metrics"][col] = max(rec["metrics"][col], tl.to_float(r.get(col)))
             rec["score"] = max(rec["score"], tl.to_float(r.get(score_col)))
         if dom:
             rec["domains"].add(dom)
@@ -143,7 +158,7 @@ def main() -> None:
             by_crm_id.setdefault(cid, org_id)
 
     # --- 2. ownership ---------------------------------------------------------
-    ownership = tl.read_csv(raw / "ownership.csv")
+    ownership = ownership_rows
     owners_by_org: dict[str, list[dict]] = {}
     unresolved = 0
     customers: set[str] = set()
@@ -176,6 +191,9 @@ def main() -> None:
 
     # --- 3. activity + pipeline ----------------------------------------------
     act_cfg = plan.get("activity") or {}
+    attribution = str(act_cfg.get("attribution") or "owner")
+    if attribution not in tl.ACTIVITY_ATTRIBUTIONS:
+        sys.exit(f"[merge] activity.attribution must be one of {tl.ACTIVITY_ATTRIBUTIONS}")
     window = tl.to_int(act_cfg.get("window_days"), 90) or 90
     activity = tl.load_activity(raw, window, tl.parse_date(act_cfg.get("as_of")))
     pipeline = {
@@ -205,14 +223,14 @@ def main() -> None:
         for owner in distinct:
             email = next((o["owner_email"] for o in real if o["owner"] == owner), "") or \
                 active_reps.get(owner, {}).get("email", "")
-            act = tl.activity_for(activity, email, domains)
+            act = tl.activity_for(activity, email, domains)  # owner's own, to pick one
             total = int(act["outbound_total"]) + int(act["email_in"])
             if total > best_activity:
                 chosen, chosen_email, best_activity = owner, email, total
 
         rep = active_reps.get(chosen, {})
         rep_segment = str(rep.get("segment") or "")
-        act = tl.activity_for(activity, chosen_email, domains)
+        act = tl.activity_for(activity, chosen_email, domains, attribution)
 
         category = rec["account_category"]
         if not category or category not in CATEGORY_RANK:
@@ -241,6 +259,10 @@ def main() -> None:
             "account_segment": account_segment,
             "owner": chosen,
             "owner_email": chosen_email,
+            # Whose name is on an account no active rep owns: a warehouse owner,
+            # a queue, or someone who left. Blank when a rep owns it.
+            "held_by": "" if chosen else "|".join(
+                sorted({o["owner"] for o in owners if o["owner"]})),
             "rep_segment": rep_segment,
             "unallocated": 0 if is_whitespace else unallocated,
             "double_allocated": 1 if len(distinct) > 1 else 0,
@@ -252,6 +274,7 @@ def main() -> None:
             "calls": act["call"],
             "emails_out": act["email_out"],
             "emails_in": act["email_in"],
+            "messages": act["message"],
             "last_activity_date": act["last_activity_date"],
             "activity_sources": act["activity_sources"],
             "pipeline_value": next(
@@ -261,6 +284,12 @@ def main() -> None:
             "proposed_owner": "",
             "proposal_reason": "",
             "proposal_status": "",
+            **rec["components"],
+            "crm_owners": "|".join(sorted({o["owner"] for o in owners if o["owner"]})),
+            **{
+                f"{tl.METRIC_PREFIX}{o['metric']}": round(rec["metrics"][o["column"]], 2)
+                for o in options
+            },
         })
 
     # account_segment / segment_misfit / strong_idle all hang off the boundary,
@@ -284,7 +313,10 @@ def main() -> None:
         ]
 
     rows.sort(key=lambda r: (-r["score"], r["org_id"]))
-    tl.write_csv(out_path, rows, tl.TERRITORY_COLUMNS)
+    tl.write_csv(out_path, rows, tl.territory_columns(rows))
+    plan["boundary"]["options"] = [{"metric": o["metric"], "label": o["label"],
+                                    "column": o["column"]} for o in options]
+    tl.write_json(plan_path, plan)
 
     # --- 5. audit -------------------------------------------------------------
     counts = {
@@ -340,14 +372,23 @@ def main() -> None:
             )
     # Book quality vs peers, the Overview's headline column. Printed so the
     # agent can quote the outliers without opening the app.
-    for seg, reps_ks in sorted(tl.ks_by_segment(rows, reps).items()):
+    top_n = {
+        str(s.get("key")): tl.ks_top_n_for(s) for s in plan.get("segments") or []
+    }
+    ks_all = tl.ks_by_segment(rows, reps)
+    for seg, reps_ks in sorted(tl.ks_by_segment(rows, reps, top_n=top_n).items()):
         for name, k in sorted(reps_ks.items(), key=lambda kv: -kv[1]["ks"]):
             if k["n_peers"] == 0:
                 continue
-            noise = "" if k["p"] < tl.KS_SIGNIFICANCE else " (within noise)"
+            whole = ks_all[seg][name]
+
+            def noise(x: dict) -> str:
+                return "" if x["p"] < tl.KS_SIGNIFICANCE else " (within noise)"
+
             print(
-                f"[merge] KS · {seg} · {name}: {k['ks']:+.2f} over {k['n']} accounts "
-                f"vs {k['n_peers']} peer accounts, p={k['p']:.3f}{noise}"
+                f"[merge] Kolmogorov-Smirnov distance · {seg} · {name} (book of {k['n']}): "
+                f"top {k['top_n']} {k['ks']:+.2f}, p={k['p']:.3f}{noise(k)} · "
+                f"all accounts {whole['ks']:+.2f}, p={whole['p']:.3f}{noise(whole)}"
             )
     if unresolved:
         print(

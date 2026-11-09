@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-06T12:20:43-08:00",
+  "generated_at": "2026-11-09T15:31:45-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -16,13 +16,15 @@
       "key": "commercial",
       "label": "Commercial",
       "order": 1,
-      "default_capacity": 150
+      "default_capacity": 150,
+      "ks_top_n": 150
     },
     {
       "key": "enterprise",
       "label": "Enterprise",
       "order": 2,
-      "default_capacity": 50
+      "default_capacity": 50,
+      "ks_top_n": 50
     }
   ],
   "boundary": {
@@ -33,6 +35,23 @@
       {
         "segment": "enterprise",
         "min": 150.0
+      }
+    ],
+    "options": [
+      {
+        "metric": "jf_people:Sales",
+        "label": "Sales headcount",
+        "column": "sales_people"
+      },
+      {
+        "metric": "score",
+        "label": "Account score",
+        "column": "score"
+      },
+      {
+        "metric": "total_employees",
+        "label": "Total employees",
+        "column": "employee_count_int"
       }
     ]
   },
@@ -224,6 +243,7 @@
       "google_calendar"
     ],
     "as_of": "2026-07-31",
+    "attribution": "owner",
     "company_domain": "northwind.example",
     "freemail_excludes": [
       "163.com",
@@ -269,6 +289,5 @@
     "whitespace_top_n": 0
   },
   "strong_cutoff": 500,
-  "tier_decile_weight": 2,
   "territory_csv": "territory.csv"
 }

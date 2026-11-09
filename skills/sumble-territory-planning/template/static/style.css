@@ -2080,3 +2080,7 @@ th.sortable:hover { color: var(--accent); }
 
 /* The Unallocated pool row: compared like a book, but it isn't a rep. */
 .matrix-table tr.pool-row td { font-style: italic; }
+
+/* Rep view: back link above the rep's name. */
+.rep-back { margin: 0 0 6px; font-size: 13px; }
+#rep-meta .rep-ks { white-space: nowrap; }

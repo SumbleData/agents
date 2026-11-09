@@ -45,27 +45,24 @@
       <section class="terr-main">
         <nav class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" role="tab">Overview</button>
-          <button class="tab" data-tab="accounts" role="tab">Accounts</button>
-          <button class="tab" data-tab="export" role="tab">Export</button>
+          <button class="tab" data-tab="changes" role="tab">Changes</button>
         </nav>
         <p id="tab-description" class="tab-description"></p>
 
       <!-- ================= Overview ================= -->
       <section id="view-overview" class="view">
         <div id="overview-segments"></div>
-        <h4 class="terr-h4">Also worth a look</h4>
-        <p class="eval-diag-sub">Click a card to open those accounts.</p>
-        <div id="highlight-cards" class="highlight-cards"></div>
       </section>
 
-      <!-- ================= Accounts ================= -->
-      <section id="view-accounts" class="view hidden">
-        <div id="account-filters" class="filter-rows"></div>
+      <!-- ================= One rep's book (opened from the Overview) ======= -->
+      <section id="view-rep" class="view hidden">
+        <p class="rep-back"><a href="#" id="rep-back">← All reps</a></p>
+        <h3 class="terr-h3" id="rep-title"></h3>
+        <p class="eval-diag-sub" id="rep-meta"></p>
+        <div id="rep-filters" class="filter-rows"></div>
         <div class="search-wrap">
           <input id="search-input" type="search"
-                 placeholder="Search name, domain, owner… (press / to focus)" autocomplete="off" />
-          <select id="rep-filter" class="terr-select"><option value="">All reps</option></select>
-          <select id="segment-filter" class="terr-select"><option value="">All segments</option></select>
+                 placeholder="Search name or domain… (press / to focus)" autocomplete="off" />
         </div>
         <div class="table-wrap">
           <table id="accounts-table">
@@ -80,16 +77,25 @@
         </div>
       </section>
 
-      <!-- ================= Export ================= -->
-      <section id="view-export" class="view hidden">
-        <div id="export-summary" class="export-summary"></div>
+      <!-- ================= Changes ================= -->
+      <section id="view-changes" class="view hidden">
+        <div id="changes-summary" class="export-summary"></div>
         <div class="btn-stack btn-stack-row">
           <button id="export-actions-2" class="btn-download">Download actions.csv</button>
           <button id="export-sheet-2" class="btn-download btn-download-secondary">Download territory.csv</button>
         </div>
-        <h3 class="terr-h3">Approved changes</h3>
+        <h3 class="terr-h3">Proposed changes</h3>
+        <div id="changes-filters" class="filter-rows"></div>
         <div class="table-wrap">
-          <table id="export-table">
+          <table id="changes-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <h3 class="terr-h3">Log</h3>
+        <p class="eval-diag-sub">Every decision made in this app, newest first.</p>
+        <div class="table-wrap">
+          <table id="log-table">
             <thead></thead>
             <tbody></tbody>
           </table>

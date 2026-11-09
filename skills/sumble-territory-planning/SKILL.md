@@ -195,17 +195,17 @@ company; no amount of name matching would have found it.
 These 0/1 flag columns are the CSV baseline (computed at merge time against the
 canonical owner). **The app recomputes the attention flags live against the
 `effective owner`** (current owner + the user's accepted/manual allocations), so
-assigning an account on the Accounts tab clears/sets its flags and updates the
+moving an account in a rep's view clears/sets its flags and updates the
 Overview immediately — the CSV columns are the exported snapshot, the UI is the
 working state.
 
-**Flags (0/1, always present)** — CSV columns. The app shows only two of them
-as filters and highlight cards: *Unallocated* and *Idle* (see below).
+**Flags (0/1, always present)** — CSV columns. The app uses two of them: *Unallocated*
+(the pool row on the Overview) and *Idle* (the rep view's default filter).
 - `unallocated` — no active rep owns it: nobody, a queue, or someone who has
   left. **A departed rep's name in the owner field is not coverage**, and this is
   the single most common way a book looks covered but isn't. In the app,
   *Unallocated* is this minus customers and whitespace (unowned, or held by a
-  warehouse owner); it is the Accounts tab's default filter.
+  warehouse owner); it is the Overview's Unallocated row.
 - `double_allocated` — ≥2 active reps own records resolving to the same org
 - `segment_misfit` — the account's size segment ≠ its owner's segment
 - `worked` — the owner has ≥1 meeting, call, or **outbound** email with the
@@ -215,11 +215,11 @@ as filters and highlight cards: *Unallocated* and *Idle* (see below).
   (global, default 500), owned, and not worked: the strongest accounts nobody is
   working. The cutoff is `strong_cutoff` in `spec.json`. A CSV column only; the
   app doesn't filter on it.
-- *Idle* (app-only) — owned and not worked. The app's second filter.
+- *Idle* (app-only) — not worked. The default filter when you open a rep.
 
 `whitespace` is a valid `account_category` and is still routed by the mover, but it
-is **not** shown as an attention highlight card — a territory review is about the
-existing book, not browsing net-new accounts.
+is **not** shown in the app — a territory review is about the existing book, not
+browsing net-new accounts.
 
 **Activity (per owning rep × this account only — never team-wide)**
 - `meetings`, `calls`, `emails_out`, `emails_in` (int)
@@ -712,15 +712,15 @@ Tell them how to work it, in this order:
    reps, so it lands where it ranks.
    It is never a rep's peer, so rep readings don't move. A positive top-N
    distance means the pool's best accounts beat the reps' best, so strong
-   accounts are sitting unowned; clicking the row opens the Unallocated filter.
+   accounts are sitting unowned. Clicking the row opens the pool like a rep's
+   book (step 3).
    The table sorts by the top-N distance by default. There is deliberately no
    average-rank depth column: an earlier "average segment rank of the top 25"
    column confused RevOps users more than it helped.
 
    Conditional formatting shades each column within its segment. **Every
    header sorts** (one sort shared by every segment's table): click to sort,
-   click again to flip. Below the tables sits the **suggested-moves CTA** (see
-   3) and then the "also worth a look" flag cards.
+   click again to flip. **Clicking a rep opens their accounts** (step 3).
 
    The metric columns, each with a plain-language tooltip on the header. Write
    the name out as "Kolmogorov-Smirnov distance" when you talk to the user; the
@@ -756,7 +756,7 @@ Tell them how to work it, in this order:
      the segment's top x, with the widest gap marked. The distance is computed on
      score, but it only sees order, so rank gives the same number; rank just
      reads more naturally ("60% of their top 50 are in the segment's top 200").
-     Clicking the rep's name still jumps to the Accounts tab.
+     Clicking anywhere else on the row opens the rep's accounts (step 3).
 
      Rough reading guide for users: under 0.1 is even, 0.1–0.25 is worth a
      look, above 0.25 is a real difference. `merge_territory.py` prints both
@@ -783,7 +783,7 @@ Tell them how to work it, in this order:
      reveals.
 
    (Book-balance itself — the coefficient-of-variation across reps — still drives
-   the Moves tab and the mover, it's just no longer the Overview's headline.)
+   the mover, it's just no longer the Overview's headline.)
 2. **Top N** (the left sidebar) — one input per segment: how many of each
    rep's best accounts the top-N distance and Activity compare. Updates the
    tables live. The segment line (`boundary.thresholds`), target accounts per
@@ -791,27 +791,28 @@ Tell them how to work it, in this order:
    not in the app: change them in `spec.json` and re-run the pipeline. Re-running
    keeps the user's accept / reject / manual decisions; `suggest_moves.py
    --reset` starts over.
-3. **Accounts filters** — one single-select row: **Unallocated** (the default),
-   **Idle**, **All**. There is no suggested-moves filter or Overview button; the
-   balancer's suggestion still shows at the top of each account's assign menu.
+3. **A rep's accounts** — there is no Accounts tab: account moves happen
+   here. Clicking a rep (or the Unallocated row) on the Overview opens their
+   book, with both distances (each opens the chart), a search box and one
+   filter row: **Idle** (the default: no meeting, call, email or Slack post in
+   the window, so these are the accounts to move first) and **All**. Columns:
+   in-segment rank, account, score, activity count, *Held by* for the pool,
+   and **Owner**, a dropdown on every row. Picking a rep records a manual move;
+   the account stays in the list showing its new owner. When the balancer
+   suggests a move, that owner sits at the top of the dropdown marked
+   "suggested" (picking it accepts), the control is tinted, and a **dismiss**
+   link rejects it. The app groups by **effective owner** (current owner +
+   accepted/manual moves), so the Overview tables update as soon as you go back.
 4. **Fix the double-allocations first.** Two reps on one company distorts every
    other number.
-5. **Accounts** — every account, sortable, with a **Rank** column (global rank by
-   ICP score, 1 = best; ties to the strong-account cutoff). The last column,
-   **Assign to**, is an owner dropdown on *every* row: allocate any account to
-   anyone (or unassign), which records a manual move. Because the whole app groups
-   by **effective owner** (current owner + your accepted/manual moves), an
-   allocation here updates the **Overview** book heatmaps and attention flags
-   immediately — assign a strong-but-unallocated account and it leaves that card
-   and joins the new owner's book. When the balancer suggests a move, that owner
-   sits at the top of the same dropdown marked "suggested" (picking it accepts,
-   preserving the reason), the control is tinted, and a tiny **dismiss** link
-   rejects it — one control, no separate accept/reject buttons or Moves tab. The
-   CTA at the top of the tab narrows to the pending suggestions. Nothing is
-   written to a CRM — Export is the hand-off.
-6. **Export** — every approved change (accepted suggestion or manual assignment),
-   with a per-row **Dismiss** to drop one without leaving the tab (it reverts the
-   account). `actions.csv` is the hand-off to the CRM. **This app never writes to
+5. **Changes** — every proposed owner change, whatever its state: suggested,
+   approved (accepted or manual) or dismissed, with a filter for each, the time
+   of its last decision, and the same Owner dropdown to approve, undo or
+   dismiss it. Below it, a **log** of every decision made in the app, newest
+   first ("Moved from A to B", "Dismissed suggestion", "Move cleared"). The log
+   is `changes.jsonl` next to `territory.csv`, one JSON line per decision;
+   `territory.csv` only holds each account's current state. `actions.csv` (the
+   approved changes) is the hand-off to the CRM. **This app never writes to
    your CRM.**
 
 For anything that looks off: a segment routing nothing usually means capacity

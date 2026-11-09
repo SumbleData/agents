@@ -21,9 +21,10 @@ const state = {
   segLabel: {},
   repByName: {},
   tab: "overview",
-  filters: new Set(["unallocated"]),  // Accounts opens on the reallocation pool
-  repFilter: "",
-  segmentFilter: "",
+  repView: null,          // {name, segKey} while one rep's book is open
+  repMode: "idle",        // rep view filter: "idle" (default) or "all"
+  changesFilter: "all",   // Changes tab: all | approved | suggested | dismissed
+  log: [],                // every decision made in the app, oldest first
   search: "",
   page: 0,
   pageSize: 100,
@@ -40,13 +41,13 @@ const state = {
 };
 
 const PAGE_DESCRIPTIONS = {
-  overview: "Each rep's book against their segment peers. Click a distance for the rep's ranked accounts, or a rep to open their accounts.",
-  accounts: "Reassign any account with the last column.",
-  export: "Approved changes for your CRM, or the full sheet.",
+  overview: "Each rep's book against their segment peers. Click a rep to move their accounts, or a distance for the ranked chart.",
+  rep: "Move an account with the last column. Idle accounts are the first to move.",
+  changes: "Every proposed owner change, and a log of each decision. Export the approved ones for your CRM.",
 };
 
 // Flags read the EFFECTIVE owner (current + your allocations), so they update
-// the moment you assign an account on the Accounts tab.
+// the moment you move an account.
 // `needsActivity: true` hides the flag entirely when no activity is loaded.
 // With zero events every owned account trivially satisfies "not worked", so
 // these cards would report the whole book as neglected when the truth is that
@@ -248,35 +249,12 @@ function renderOverview() {
   });
   $$("#overview-segments td.ks-cell[data-rep]").forEach((td) => {
     td.onclick = (e) => {
-      e.stopPropagation();   // the row click would jump to the Accounts tab
+      e.stopPropagation();   // the row click would open the rep's accounts
       showRepRanking(td.dataset.rep, td.dataset.seg, td.dataset.mode);
     };
   });
   $$("#overview-segments tr.rep-row").forEach((tr) => {
-    tr.onclick = () => {
-      const isPool = tr.dataset.rep === POOL.name;
-      state.repFilter = isPool ? "" : tr.dataset.rep;
-      state.filters = isPool ? new Set(["unallocated"]) : new Set();
-      state.segmentFilter = ""; state.page = 0;
-      switchTab("accounts");
-    };
-  });
-
-  $("#highlight-cards").innerHTML = activeFlags().map((f) => {
-    const n = state.rows.filter(f.test).length;
-    return `<button class="highlight-card ${n ? "" : "empty"}" data-flag="${f.key}" title="${esc(f.help)}">
-      <span class="hc-count">${fmt(n)}</span>
-      <span class="hc-label">${esc(f.label)}</span>
-      <span class="hc-help">${esc(f.help)}</span>
-    </button>`;
-  }).join("");
-
-  $$("#highlight-cards .highlight-card").forEach((el) => {
-    el.onclick = () => {
-      state.filters = new Set([el.dataset.flag]);
-      state.repFilter = ""; state.segmentFilter = ""; state.page = 0;
-      switchTab("accounts");
-    };
+    tr.onclick = () => openRep(tr.dataset.rep, tr.dataset.seg);
   });
 }
 
@@ -502,16 +480,13 @@ function showRepRanking(repName, segKey, mode = "top") {
         <th class="num">Score</th>${activity ? `<th class="num">Worked</th>` : ""}
       </tr></thead><tbody>${rowsHtml ||
         `<tr><td colspan="5" class="empty-state">No accounts in this segment.</td></tr>`}</tbody></table>
-      <p><a href="#" id="ks-open-accounts">Open in the Accounts tab →</a></p>
+      <p><a href="#" id="ks-open-accounts">Move ${repName === POOL.name ? "these" : "their"} accounts →</a></p>
     </div>`;
   $$("#detail-body tr.ks-acct").forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.id); });
   $("#ks-open-accounts").onclick = (e) => {
     e.preventDefault();
-    const isPool = repName === POOL.name;
-    state.repFilter = isPool ? "" : repName; state.segmentFilter = segKey;
-    state.filters = isPool ? new Set(["unallocated"]) : new Set(); state.page = 0;
     $("#detail-panel").classList.add("hidden");
-    switchTab("accounts");
+    openRep(repName, segKey);
   };
   if (k.n_peers) wireKsChart(mineR, peerR, repName === POOL.name ? POOL.name : "This rep");
   $("#detail-panel").classList.remove("hidden");
@@ -705,6 +680,7 @@ function renderMatrix(grp, metrics, sort) {
       return `<td class="num ${c.cls || ""}${extra}"${bg}${data}${tip}>${c.fmt(v)}</td>`;
     }).join("");
     return `<tr class="rep-row${rep.pool ? " pool-row" : ""}" data-rep="${esc(rep.name)}"` +
+      ` data-seg="${esc(grp.key)}"` +
       `${rep.pool ? ` title="Unowned accounts, compared with the reps' books"` : ""}>${cells}</tr>`;
   }).join("");
 
@@ -712,31 +688,44 @@ function renderMatrix(grp, metrics, sort) {
     <thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 
-function filteredRows() {
+/** One book, as listed in the rep view: everything the rep owns or has been
+ *  proposed, so an account stays on screen (showing its new owner) after you
+ *  move it. The Unallocated pool is its segment's unowned accounts. */
+function repBook(v) {
+  if (v.name === POOL.name) {
+    return state.rows.filter((r) => !r.owner && !isWhitespace(r) &&
+      r.account_category !== "customer" && r.account_segment === v.segKey);
+  }
+  return state.rows.filter((r) => r.owner === v.name || r.proposed_owner === v.name);
+}
+
+function repViewRows() {
   const q = state.search.trim().toLowerCase();
-  return state.rows.filter((r) => {
-    if (state.filters.size) {
-      const preds = [...state.filters].map((key) =>
-        FLAGS.find((f) => f.key === key)?.test || (() => false));
-      if (!preds.some((p) => p(r))) return false;
-    }
-    if (state.repFilter && r.owner !== state.repFilter && r.proposed_owner !== state.repFilter) return false;
-    if (state.segmentFilter && r.account_segment !== state.segmentFilter) return false;
-    if (q) {
-      const hay = `${r.name} ${r.domain} ${r.owner} ${r.proposed_owner}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+  const idle = state.repMode === "idle" && hasActivityData();
+  return repBook(state.repView).filter((r) => {
+    if (idle && num(r.worked)) return false;
+    if (q && !`${r.name} ${r.domain}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => {
     const k = state.sort.key;
     let av, bv;
-    if (k === "name" || k === "owner") { av = String(a[k] || ""); bv = String(b[k] || ""); }
+    if (k === "name") { av = String(a.name || ""); bv = String(b.name || ""); }
     else if (k === "rank") { av = accountRank(a) ?? Infinity; bv = accountRank(b) ?? Infinity; }
     else { av = num(a[k]); bv = num(b[k]); }
     if (av < bv) return -state.sort.dir;
     if (av > bv) return state.sort.dir;
     return String(a.org_id).localeCompare(String(b.org_id));
   });
+}
+
+/** Open one rep's book (or the Unallocated pool) on the Idle filter. */
+function openRep(name, segKey) {
+  state.repView = { name, segKey };
+  state.repMode = hasActivityData() ? "idle" : "all";
+  state.search = ""; $("#search-input").value = "";
+  state.sort = { key: "score", dir: -1 };
+  state.page = 0;
+  showView("rep");
 }
 
 /** The "Assign to" cell — ONE owner dropdown per row does everything: allocate
@@ -785,78 +774,101 @@ function assignCell(r) {
   return `<div class="assign-wrap">${select}${note}</div>`;
 }
 
-function renderAccounts() {
-  // One single-select row: Unallocated (the default), Idle, All.
+function renderRep() {
+  const v = state.repView;
+  const isPool = v.name === POOL.name;
+  const book = repBook(v);
+  const segLabel = state.segLabel[v.segKey] || v.segKey || "";
+  $("#rep-title").textContent = isPool ? `Unallocated · ${segLabel}` : v.name;
+
+  // The rep's two readings from the Overview table, each opening the chart.
+  const grp = { key: v.segKey, books: segmentBooks(v.segKey) };
+  const segBook = grp.books.find((b) => b.rep.name === v.name)?.book || bookFor(v.name, v.segKey);
+  const topN = state.ksTopN[v.segKey] || KS_TOP_N_FALLBACK;
+  const signed = (x) => (x.ks > 0 ? "+" : x.ks < 0 ? "−" : "") + Math.abs(x.ks).toFixed(2);
+  const kTop = ksForRep(segBook, grp, topN), kAll = ksForRep(segBook, grp, null);
+  const reading = (k, mode, label) => k.n_peers
+    ? `<a href="#" class="rep-ks" data-mode="${mode}">${label} ${signed(k)}</a>` : "";
+  $("#rep-meta").innerHTML = `${fmt(book.length)} accounts` +
+    (isPool ? "" : ` · ${esc(segLabel)}`) +
+    (kTop.n_peers ? ` · Kolmogorov-Smirnov distance: ${reading(kTop, "top", `top ${fmt(topN)}`)}, ` +
+      `${reading(kAll, "all", "all accounts")}` : "");
+  $$("#rep-meta .rep-ks").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); showRepRanking(v.name, v.segKey, a.dataset.mode); };
+  });
+
+  // Idle (the default) or All.
+  const hasAct = hasActivityData();
+  const idleN = book.filter((r) => !num(r.worked)).length;
   const chip = (key, label, n, help) =>
-    `<button class="cat-chip ${(key ? state.filters.has(key) : !state.filters.size) ? "active" : ""}"
-      data-flag="${key}" title="${esc(help)}">${esc(label)}
-      <span class="cat-count">${fmt(n)}</span></button>`;
-  $("#account-filters").innerHTML = `<div class="filter-row">` +
-    activeFlags().map((f) => chip(f.key, f.label, state.rows.filter(f.test).length, f.help)).join("") +
-    chip("", "All", state.rows.length, "Every account.") + `</div>`;
-  $$("#account-filters [data-flag]").forEach((el) => {
-    el.onclick = () => {
-      state.filters = el.dataset.flag ? new Set([el.dataset.flag]) : new Set();
-      state.page = 0;
-      render();
-    };
+    `<button class="cat-chip ${state.repMode === key ? "active" : ""}" data-mode="${key}"
+      title="${esc(help)}">${esc(label)} <span class="cat-count">${fmt(n)}</span></button>`;
+  $("#rep-filters").innerHTML = `<div class="filter-row">` +
+    (hasAct ? chip("idle", "Idle", idleN,
+      `No meeting, call, email or Slack post in the last ${fmt(state.plan.activity?.window_days || 90)} days.`) : "") +
+    chip("all", "All", book.length, "Every account in this book.") + `</div>`;
+  $$("#rep-filters [data-mode]").forEach((el) => {
+    el.onclick = () => { state.repMode = el.dataset.mode; state.page = 0; render(); };
   });
 
   const cols = [
-    { key: "rank", label: "Rank", num: true },
-    { key: "name", label: "Account" },
-    { key: "account_segment", label: "Segment" },
-    { key: "size_metric", label: sizeLabel(), num: true },
-    { key: "score", label: "Score", num: true },
-    { key: "owner", label: "Current owner" },
+    { key: "rank", label: "Rank", num: true, sort: true },
+    { key: "name", label: "Account", sort: true },
+    { key: "score", label: "Score", num: true, sort: true },
     { key: "activity", label: "Activity", num: true },
-    { key: "flags", label: "Flags" },
-    { key: "assign", label: "Assign to" },
+    ...(isPool ? [{ key: "held_by", label: "Held by" }] : []),
+    { key: "assign", label: "Owner" },
   ];
   $("#accounts-table thead").innerHTML = `<tr>${cols.map((c) =>
-    `<th class="${c.num ? "num" : ""} ${["flags", "assign", "activity"].includes(c.key) ? "" : "sortable"}"
-        data-key="${c.key}">${esc(c.label)}${state.sort.key === c.key
-        ? (state.sort.dir === -1 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>`;
+    `<th class="${c.num ? "num" : ""} ${c.sort ? "sortable" : ""}" data-key="${c.key}">` +
+    `${esc(c.label)}${state.sort.key === c.key ? (state.sort.dir === -1 ? " ▾" : " ▴") : ""}</th>`
+  ).join("")}</tr>`;
   $$("#accounts-table th.sortable").forEach((th) => {
     th.onclick = () => {
       const k = th.dataset.key;
       state.sort = state.sort.key === k
         ? { key: k, dir: -state.sort.dir }
-        : { key: k, dir: (k === "name" || k === "owner" || k === "rank") ? 1 : -1 };
+        : { key: k, dir: (k === "name" || k === "rank") ? 1 : -1 };
       render();
     };
   });
 
-  const rows = filteredRows();
+  const rows = repViewRows();
   const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
   state.page = Math.min(state.page, pages - 1);
   const slice = rows.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
 
-  $("#accounts-table tbody").innerHTML = slice.map((r) => {
+  $("#accounts-table tbody").innerHTML = slice.length ? slice.map((r) => {
     const acts = num(r.meetings) + num(r.calls) + num(r.emails_out) + num(r.messages);
     return `<tr data-id="${esc(r.org_id)}">
       <td class="num">${accountRank(r) ? fmt(accountRank(r)) : "—"}</td>
       <td>${r.sumble_url
         ? `<a href="${esc(r.sumble_url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
         : esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
-      <td>${esc(state.segLabel[r.account_segment] || r.account_segment || "—")}</td>
-      <td class="num">${fmt(r.size_metric)}</td>
       <td class="num">${fmt(r.score, 1)}</td>
-      <td>${esc(r.owner || "—")}${num(r.double_allocated)
-        ? `<span class="cell-sub">also: ${esc(r.other_owners)}</span>` : ""}${!r.owner && r.held_by
-        ? `<span class="cell-sub">held by ${esc(r.held_by.split("|").join(", "))}</span>` : ""}</td>
       <td class="num" title="${num(r.meetings)} meetings · ${num(r.calls)} calls · ${num(r.emails_out)} emails out · ${num(r.messages)} Slack messages">
         ${acts ? fmt(acts) : `<span class="zero">0</span>`}</td>
-      <td>${flagPills(r)}</td>
+      ${isPool ? `<td>${esc((r.held_by || "").split("|").filter(Boolean).join(", ") || "—")}</td>` : ""}
       <td class="assign-cell">${assignCell(r)}</td>
     </tr>`;
-  }).join("");
-  $$("#accounts-table tbody tr").forEach((tr) => {
-    tr.onclick = () => showDetail(tr.dataset.id);
+  }).join("") : `<tr><td colspan="${cols.length}" class="empty-state">` +
+    `${state.repMode === "idle" ? "No idle accounts." : "No accounts."}</td></tr>`;
+  $$("#accounts-table tbody tr[data-id]").forEach((tr) => {
+    tr.onclick = (e) => { if (!e.target.closest("a")) showDetail(tr.dataset.id); };
   });
-  // The assign dropdown and accept/reject live in the last column; stop the
-  // click bubbling up to the row (which would open the detail panel).
-  $$("#accounts-table .assign-select").forEach((sel) => {
+  wireAssignControls("#accounts-table");
+
+  $("#page-info").textContent = rows.length
+    ? `${fmt(state.page * state.pageSize + 1)}–${fmt(Math.min((state.page + 1) * state.pageSize, rows.length))} of ${fmt(rows.length)}`
+    : "";
+  $("#page-prev").disabled = state.page <= 0;
+  $("#page-next").disabled = state.page >= pages - 1;
+}
+
+/** The owner dropdown and its undo/dismiss link, in any table. Clicks stop
+ *  here so they don't open the account panel. */
+function wireAssignControls(scope) {
+  $$(`${scope} .assign-select`).forEach((sel) => {
     sel.onclick = (e) => e.stopPropagation();
     sel.onchange = (e) => {
       e.stopPropagation();
@@ -864,53 +876,84 @@ function renderAccounts() {
       else decide(sel.dataset.id, "manual", sel.value);
     };
   });
-  $$("#accounts-table .decide-btn").forEach((btn) => {
+  $$(`${scope} .decide-btn`).forEach((btn) => {
     btn.onclick = (e) => { e.stopPropagation(); decide(btn.dataset.id, btn.dataset.status); };
   });
-
-  $("#page-info").textContent = rows.length
-    ? `${fmt(state.page * state.pageSize + 1)}–${fmt(Math.min((state.page + 1) * state.pageSize, rows.length))} of ${fmt(rows.length)}`
-    : "no matching accounts";
-  $("#page-prev").disabled = state.page <= 0;
-  $("#page-next").disabled = state.page >= pages - 1;
 }
 
 function sizeLabel() {
   return state.rows[0]?.size_metric_name || "Size";
 }
 
-function renderExport() {
-  const approved = state.rows.filter(isApproved);
-  const pending = state.rows.filter((r) => r.proposal_status === "suggested").length;
-  $("#export-summary").innerHTML = `
-    <p><strong>${fmt(approved.length)}</strong> approved change${approved.length === 1 ? "" : "s"} ready to export.
-    ${pending ? `<strong>${fmt(pending)}</strong> proposal${pending === 1 ? " is" : "s are"} still undecided.` : ""}</p>
-    <p class="eval-diag-sub">One row per owner change. Nothing is written to your CRM.</p>`;
+const STATUS_LABELS = {
+  suggested: "Suggested", accepted: "Approved", manual: "Approved", rejected: "Dismissed",
+};
 
-  const cols = ["Account", "Segment", "From", "To", "Reason", "Score", ""];
-  $("#export-table thead").innerHTML = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
-  $("#export-table tbody").innerHTML = approved.length ? approved.map((r) => `<tr>
+/** What one log entry did, in words. */
+function logAction(e) {
+  const to = e.proposed_owner, from = e.owner || "unassigned";
+  if (e.requested === "manual") {
+    return e.status === "manual" ? `Moved from ${from} to ${to}` : "Move cleared";
+  }
+  if (e.requested === "accepted") return `Approved suggestion: ${from} → ${to}`;
+  if (e.requested === "rejected") return `Dismissed suggestion: ${from} → ${to}`;
+  return e.status === "suggested" ? `Undone, back to suggesting ${to}` : "Undone";
+}
+
+function renderChanges() {
+  const proposals = state.rows.filter((r) =>
+    r.proposed_owner && ["suggested", "accepted", "manual", "rejected"].includes(r.proposal_status));
+  const group = (r) => (r.proposal_status === "manual" ? "accepted" : r.proposal_status);
+  const counts = { approved: 0, suggested: 0, dismissed: 0 };
+  for (const r of proposals) {
+    const g = group(r);
+    if (g === "accepted") counts.approved++;
+    else if (g === "suggested") counts.suggested++;
+    else counts.dismissed++;
+  }
+  $("#changes-summary").innerHTML = `<p><strong>${fmt(counts.approved)}</strong> approved` +
+    ` (these go in actions.csv) · <strong>${fmt(counts.suggested)}</strong> awaiting a decision` +
+    ` · <strong>${fmt(counts.dismissed)}</strong> dismissed. Nothing is written to your CRM.</p>`;
+
+  const filters = [["all", "All", proposals.length], ["approved", "Approved", counts.approved],
+    ["suggested", "Suggested", counts.suggested], ["dismissed", "Dismissed", counts.dismissed]];
+  $("#changes-filters").innerHTML = `<div class="filter-row">` + filters.map(([k, label, n]) =>
+    `<button class="cat-chip ${state.changesFilter === k ? "active" : ""}" data-k="${k}">` +
+    `${label} <span class="cat-count">${fmt(n)}</span></button>`).join("") + `</div>`;
+  $$("#changes-filters [data-k]").forEach((el) => {
+    el.onclick = () => { state.changesFilter = el.dataset.k; render(); };
+  });
+
+  // Most recent decision first; undecided suggestions after, strongest first.
+  const lastAt = {};
+  for (const e of state.log) lastAt[e.org_id] = e.at;
+  const want = { all: null, approved: "accepted", suggested: "suggested", dismissed: "rejected" }[state.changesFilter];
+  const shown = proposals.filter((r) => !want || group(r) === want).sort((a, b) =>
+    String(lastAt[b.org_id] || "").localeCompare(String(lastAt[a.org_id] || "")) ||
+    num(b.score) - num(a.score));
+  const when = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+
+  const cols = ["When", "Account", "From", "To", "Reason", "Status", "Owner"];
+  $("#changes-table thead").innerHTML = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  $("#changes-table tbody").innerHTML = shown.length ? shown.map((r) => `<tr data-id="${esc(r.org_id)}">
+      <td>${esc(when(lastAt[r.org_id]))}</td>
       <td>${esc(r.name)}<span class="cell-sub">${esc(r.domain)}</span></td>
-      <td>${esc(state.segLabel[r.account_segment] || r.account_segment)}</td>
       <td>${esc(r.owner || "(unassigned)")}</td>
       <td>${esc(r.proposed_owner)}</td>
       <td>${esc(REASON_LABELS[r.proposal_reason] || r.proposal_reason)}</td>
-      <td class="num">${fmt(r.score, 1)}</td>
-      <td class="num"><button class="dismiss-change btn-link" data-id="${esc(r.org_id)}"
-        data-status="${esc(r.proposal_status)}"
-        title="Drop this change from the export (reverts the account)">Dismiss</button></td>
+      <td>${esc(STATUS_LABELS[r.proposal_status] || r.proposal_status)}</td>
+      <td class="assign-cell">${assignCell(r)}</td>
     </tr>`).join("")
-    : `<tr><td colspan="${cols.length}" class="empty-state">Nothing approved yet — accept a
-        suggestion or assign an owner on the Accounts tab.</td></tr>`;
+    : `<tr><td colspan="${cols.length}" class="empty-state">No proposed changes yet. ` +
+      `Click a rep on the Overview to move their accounts.</td></tr>`;
+  $$("#changes-table tbody tr[data-id]").forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.id); });
+  wireAssignControls("#changes-table");
 
-  $$("#export-table .dismiss-change").forEach((btn) => {
-    btn.onclick = () => {
-      // A manual assignment is cleared (blank owner); an accepted suggestion is
-      // rejected so it won't be re-proposed. Either way it leaves the export.
-      if (btn.dataset.status === "manual") decide(btn.dataset.id, "manual", "");
-      else decide(btn.dataset.id, "rejected");
-    };
-  });
+  const logCols = ["When", "Account", "What happened"];
+  $("#log-table thead").innerHTML = `<tr>${logCols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  $("#log-table tbody").innerHTML = state.log.length ? [...state.log].reverse().map((e) => `<tr>
+      <td>${esc(when(e.at))}</td><td>${esc(e.name)}</td><td>${esc(logAction(e))}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty-state">No decisions yet.</td></tr>`;
 }
 
 function showDetail(orgId) {
@@ -999,22 +1042,31 @@ async function decide(orgId, status, proposedOwner) {
   }
   const out = await res.json();
   Object.assign(row, out.row);
+  if (out.log_entry) state.log.push(out.log_entry);
+  render();
+}
+
+/** Show a view: "overview", "rep" (one book, opened from the Overview, so the
+ *  Overview tab stays lit) or "changes". */
+function showView(view) {
+  state.tab = view;
+  const tab = view === "changes" ? "changes" : "overview";
+  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
+  $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== `view-${view}`));
+  $("#tab-description").textContent = PAGE_DESCRIPTIONS[view] || "";
   render();
 }
 
 function switchTab(tab) {
-  state.tab = tab;
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tab));
-  $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== `view-${tab}`));
-  $("#tab-description").textContent = PAGE_DESCRIPTIONS[tab] || "";
-  render();
+  state.repView = null;
+  showView(tab);
 }
 
 function render() {
   computeStrongSet();  // refresh the "strong" set for the attention flags
   if (state.tab === "overview") renderOverview();
-  else if (state.tab === "accounts") renderAccounts();
-  else if (state.tab === "export") renderExport();
+  else if (state.tab === "rep") renderRep();
+  else if (state.tab === "changes") renderChanges();
 }
 
 /** Put the top-N inputs back to the plan's values and rebuild them. */
@@ -1039,6 +1091,7 @@ async function init() {
   const data = await res.json();
   state.plan = data.plan;
   state.rows = data.rows;
+  state.log = data.log || [];
   state.segments = (data.plan.segments || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   state.segLabel = Object.fromEntries(state.segments.map((s) => [s.key, s.label]));
   state.reps = (data.plan.reps || []).filter((r) => r.is_rep);
@@ -1052,11 +1105,6 @@ async function init() {
   $("#row-summary").textContent =
     `${fmt(state.rows.length)} accounts · ${fmt(state.reps.length)} reps · ${fmt(owned)} allocated`;
 
-  $("#rep-filter").innerHTML = `<option value="">All reps</option>` +
-    state.reps.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join("");
-  $("#segment-filter").innerHTML = `<option value="">All segments</option>` +
-    state.segments.map((s) => `<option value="${esc(s.key)}">${esc(s.label)}</option>`).join("");
-
   $$(".tab").forEach((t) => { t.onclick = () => switchTab(t.dataset.tab); });
   $("#calibrate-reset-fields").onclick = () => {
     // Put every field back to the plan's saved values: the segment cutoff
@@ -1067,8 +1115,7 @@ async function init() {
   // The strong-account cutoff is not editable in the app; it comes from the
   // plan's strong_cutoff.
   $("#search-input").oninput = (e) => { state.search = e.target.value; state.page = 0; render(); };
-  $("#rep-filter").onchange = (e) => { state.repFilter = e.target.value; state.page = 0; render(); };
-  $("#segment-filter").onchange = (e) => { state.segmentFilter = e.target.value; state.page = 0; render(); };
+  $("#rep-back").onclick = (e) => { e.preventDefault(); switchTab("overview"); };
   $("#page-prev").onclick = () => { state.page = Math.max(0, state.page - 1); render(); };
   $("#page-next").onclick = () => { state.page += 1; render(); };
   $("#detail-close").onclick = () => $("#detail-panel").classList.add("hidden");
@@ -1079,7 +1126,7 @@ async function init() {
   $("#export-sheet-2").onclick = () => dl("/api/territory.csv");
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && document.activeElement !== $("#search-input")) {
-      if (state.tab !== "accounts") switchTab("accounts");
+      if (state.tab !== "rep") return;
       e.preventDefault(); $("#search-input").focus();
     }
     if (e.key === "Escape") $("#detail-panel").classList.add("hidden");

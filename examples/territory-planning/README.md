@@ -3,9 +3,8 @@
 A public, self-contained demo of the [`sumble-territory-planning`](../../skills/sumble-territory-planning)
 skill's app: a **book-strength table per segment** (Kolmogorov-Smirnov distance vs peers on
 each rep's top N and on all accounts, each with an Activity share; click a distance to see that rep's accounts ranked), a **Top N**
-sidebar, a
-granular **Accounts** tab where you assign any account to anyone, and a
-suggest → accept/reject → **Export** flow.
+sidebar, a click-through on each rep to move their idle accounts, and a
+**Changes** tab that lists every proposed move with a log of each decision.
 
 Runs on any stock Python 3.10+ — **no pip install, no dependencies.**
 

@@ -23,6 +23,7 @@ import json
 import os
 import sys
 import threading
+from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,9 @@ import territory_lib as tl
 APP_DIR = Path(__file__).resolve().parent
 PLAN_PATH = APP_DIR / "territory-plan.json"
 STATIC_DIR = APP_DIR / "static"
+# One JSON line per decision made in the app, oldest first. The Changes tab
+# shows it newest first. territory.csv only holds each account's current state.
+LOG_PATH = APP_DIR / "changes.jsonl"
 
 # Statuses the UI may set. "suggested" is the pipeline's own output and is not
 # settable from the app — a user either accepts it, rejects it, or overrides the
@@ -58,6 +62,11 @@ class State:
             )
         self.rows: list[dict[str, Any]] = tl.read_csv(self.csv_path)
         self.by_id: dict[str, dict[str, Any]] = {str(r.get("org_id")): r for r in self.rows}
+        self.log: list[dict[str, Any]] = []
+        if LOG_PATH.exists():
+            for line in LOG_PATH.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    self.log.append(json.loads(line))
 
     # -- persistence -------------------------------------------------------
 
@@ -158,7 +167,24 @@ class State:
         else:
             row["proposal_status"] = status
         self.save()
+        self._append_log(row, status)
         return row
+
+    def _append_log(self, row: dict[str, Any], requested: str) -> None:
+        """Record what was asked for and where the account ended up."""
+        entry = {
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "org_id": str(row.get("org_id")),
+            "name": row.get("name") or "",
+            "requested": requested,
+            "owner": row.get("owner") or "",
+            "proposed_owner": row.get("proposed_owner") or "",
+            "status": row.get("proposal_status") or "",
+            "reason": row.get("proposal_reason") or "",
+        }
+        self.log.append(entry)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
 
     # -- export ------------------------------------------------------------
 
@@ -247,7 +273,9 @@ class Handler(SimpleHTTPRequestHandler):
             return super().do_GET()
         if self.path == "/api/plan":
             with _LOCK:
-                return self._send_json({"plan": STATE.plan, "rows": STATE.rows})
+                return self._send_json(
+                    {"plan": STATE.plan, "rows": STATE.rows, "log": STATE.log}
+                )
         if self.path == "/api/export":
             with _LOCK:
                 body = STATE.actions_csv()
@@ -305,7 +333,7 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError as e:
             self.send_error(500, f"could not write territory.csv: {e}")
             return
-        self._send_json({"ok": True, "row": row})
+        self._send_json({"ok": True, "row": row, "log_entry": STATE.log[-1]})
 
     def _send_json(self, data: Any) -> None:
         body = json.dumps(data, default=str).encode("utf-8")

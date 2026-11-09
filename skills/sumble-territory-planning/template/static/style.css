@@ -2079,4 +2079,4 @@ th.sortable:hover { color: var(--accent); }
 .ks-rank-table tr.ks-past td { color: var(--fg-dim); }
 
 /* The Unallocated pool row: compared like a book, but it isn't a rep. */
-.matrix-table tr.pool-row td { border-top: 2px solid var(--border); font-style: italic; }
+.matrix-table tr.pool-row td { font-style: italic; }

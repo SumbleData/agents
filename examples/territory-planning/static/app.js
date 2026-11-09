@@ -331,7 +331,7 @@ function bookFor(name, segKey) {
   return name === POOL.name ? poolBook(segKey) : inSegmentBook(name, segKey);
 }
 
-/** Every rep's book in a segment, plus the Unallocated pool last. */
+/** Every rep's book in a segment, plus the Unallocated pool. */
 function segmentBooks(segKey) {
   return state.reps.filter((r) => r.segment === segKey)
     .map((rep) => ({ rep, book: inSegmentBook(rep.name, segKey) }))
@@ -675,8 +675,6 @@ function renderMatrix(grp, metrics, sort) {
     if (av > bv) return sort.dir;
     return a.rep.name.localeCompare(b.rep.name);
   });
-  // The Unallocated pool always sits last, under the reps it's compared with.
-  rows.sort((a, b) => (a.rep.pool ? 1 : 0) - (b.rep.pool ? 1 : 0));
 
   const head = `<tr>${columns.map((c) => {
     const active = sort.key === c.key;

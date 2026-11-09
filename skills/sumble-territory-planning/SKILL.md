@@ -814,7 +814,7 @@ Tell them how to work it, in this order:
    --reset` starts over.
 3. **A rep's accounts** — there is no Accounts tab: account moves happen
    here. Clicking a rep (or the Unallocated row) on the Overview opens their
-   book in a side sheet over the Overview (× , Esc or a click outside closes
+   book in a side sheet over the Overview (×, Esc or a click outside closes
    it), with both distances (each opens the chart), a search box and one
    filter row: **Idle** (the default: no meeting, call, email or Slack post in
    the window, so these are the accounts to move first), **Customers** (shown

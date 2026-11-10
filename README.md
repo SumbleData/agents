@@ -222,7 +222,7 @@ The people-scoring method and its use cases live in
 The territory-planning method is written up in
 [`skills/sumble-territory-planning/articles/`](skills/sumble-territory-planning/articles):
 
-1. [Balance territories on value, not account counts](skills/sumble-territory-planning/articles/01-balance-territories-on-value-not-account-counts.md)
+1. [Balance territories on account value](skills/sumble-territory-planning/articles/01-balance-territories-on-value-not-account-counts.md)
 
 ## Network endpoints and credentials
 

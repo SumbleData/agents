@@ -151,8 +151,8 @@ function renderOverview() {
   const parts = [
     `<p class="eval-diag-sub" id="matrices-note">` +
     "Kolmogorov-Smirnov distance against segment peers: 0 even, + stronger, − weaker. " +
-    "Top N is the segment's target accounts per rep; all accounts compares whole books. " +
-    "Activity is the share of accounts touched in the window. Grey = could be chance.</p>",
+    "Top N is the segment's target accounts per rep. " +
+    "Activity is the share of the top N touched in the window. Grey = could be chance.</p>",
   ];
 
   // Every segment, including one with no reps yet: its accounts still need
@@ -268,7 +268,6 @@ function renderOverview() {
       `ranked within ${fmt(grp.size)} accounts</span></h3>`);
     parts.push(renderMatrix(grp, [
       ksMetric("top", n), distMetric(n, grp), ...(hasAct ? [activityMetric("top", n)] : []),
-      ksMetric("all", n), ...(hasAct ? [activityMetric("all", n)] : []),
     ], state.overviewSort.strength));
   }
   if (!hasAct && shown.length) {

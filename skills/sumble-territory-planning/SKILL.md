@@ -704,20 +704,20 @@ Tell them how to work it, in this order:
    **Unallocated** row, which reads the segment's unowned accounts as one more
    book so you can see how much value nobody holds. Columns:
    - **Accounts** and **Customers**, in this segment only.
-   - **Kolmogorov-Smirnov distance, top N** (the default sort) and **all
-     accounts**. N is the segment's target accounts per rep. The signed distance
+   - **Kolmogorov-Smirnov distance, top N** (the default sort). N is the
+     segment's target accounts per rep. The signed distance
      compares where the rep's accounts sit in the segment's ranking against the
      pooled accounts of every other rep in the segment: `0` is the same mix,
      `+` skews stronger, `−` weaker, `±1` no overlap. The top-N reading compares
      each rep's best N, so a big book can't look strong just by being big; a
-     top-N slot a rep can't fill counts as empty. The all-accounts reading
-     compares whole books. Readings with p ≥ 0.05 are greyed: a small book can
+     top-N slot a rep can't fill counts as empty. (The whole-book reading is
+     still in the rep sheet's header.) Readings with p ≥ 0.05 are greyed: a small book can
      differ by chance. Player-coaches (`in_balance=0`) get a reading but never
      join anyone's peer pool. Rough guide: under 0.1 is even, 0.1 to 0.25 is
      worth a look, above 0.25 is a real difference. `merge_territory.py` prints
      every rep's distance and p-value; quote the significant outliers.
    - **Top N ranks**, a small box plot of where the rep's best N rank in the segment (1 = best, at the left).
-   - **Activity, top N** and **Activity, all accounts**: the share worked in
+   - **Activity, top N**: the share of the top N worked in
      the window (a meeting, call, outbound email or Slack post, or a meeting
      already booked in the next 28 days).
 

@@ -716,7 +716,7 @@ Tell them how to work it, in this order:
      join anyone's peer pool. Rough guide: under 0.1 is even, 0.1 to 0.25 is
      worth a look, above 0.25 is a real difference. `merge_territory.py` prints
      every rep's distance and p-value; quote the significant outliers.
-   - **Top N scores**, a small box plot of the rep's best N on one scale.
+   - **Top N ranks**, a small box plot of where the rep's best N rank in the segment (1 = best, at the left).
    - **Activity, top N** and **Activity, all accounts**: the share worked in
      the window (a meeting, call, outbound email or Slack post, or a meeting
      already booked in the next 28 days).

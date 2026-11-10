@@ -197,28 +197,33 @@ function renderOverview() {
       return k.n_peers ? { v: k.ks, muted: k.p >= KS_SIGNIFICANCE } : null;
     },
   });
-  // Each rep's top N account scores as a strip on the segment's shared scale:
-  // whisker p10-p90, box p25-p75, tick at the median, dashed line at the
-  // reps' pooled median. Real accounts only; a book short of N is drawn
-  // faded, since the distance counts its empty slots as 0. The distance says
-  // how far apart two books are; the strip shows where.
+  // Each rep's top N accounts by their rank in the segment (1 = best), as a
+  // strip on the segment's shared scale with rank 1 at the left: whisker
+  // p10-p90, box p25-p75, tick at the median, dashed line at the reps' pooled
+  // median. Ranks, not scores, because ranks are what the distance reads.
+  // Real accounts only; a book short of N is drawn faded, since the distance
+  // counts its empty slots as missing. The distance says how far apart two
+  // books are; the strip shows where.
   const distMetric = (n, grp) => {
-    const best = (b) => b.book.map((r) => num(r.score)).sort((x, y) => y - x).slice(0, n);
+    const { ranks } = segmentRanks();
+    const best = (b) => b.book.map((r) => ranks[r.org_id]).filter(Number.isFinite)
+      .sort((x, y) => x - y).slice(0, n);
     const all = grp.books.flatMap(best);
-    const scale = { lo: all.length ? quantile(all, 0.02) : 0, hi: Math.max(1, ...all) };
-    if (scale.hi <= scale.lo) scale.lo = 0;
+    const scale = { lo: 1, hi: Math.max(2, all.length ? quantile(all, 0.98) : 2) };
     const peers = grp.books.filter((b) => !b.rep.pool && b.rep.in_balance !== false).flatMap(best);
     const ref = peers.length ? quantile(peers, 0.5) : null;
     return {
-      key: "dist", label: `Top ${fmt(n)} scores`, dist: true,
-      help: `Each rep's best ${fmt(n)} account scores, on one scale for the segment. ` +
+      key: "dist", label: `Top ${fmt(n)} ranks`, dist: true,
+      help: `Where each rep's best ${fmt(n)} accounts rank in the segment (1 = best, ` +
+        "at the left), on one scale for the segment. " +
         "Box: middle half. Whisker: 10th to 90th percentile. Tick: median. " +
         "Dashed line: the reps' median. Faded: fewer than " + fmt(n) +
-        " accounts, and the distance counts the missing ones as 0.",
+        " accounts, and the distance counts the missing ones as empty slots.",
       value: () => null,
       render: (book) => {
         const top = best({ book });
-        return distStrip(top, scale, ref, top.length < n ? `${fmt(top.length)} of ${fmt(n)} slots filled` : "");
+        return distStrip(top, scale, ref, top.length < n ? `${fmt(top.length)} of ${fmt(n)} slots filled` : "",
+          { digits: 0, noun: "rank " });
       },
     };
   };
@@ -679,14 +684,17 @@ function quantile(values, q) {
   return v[lo] + (v[hi] - v[lo]) * (i - lo);
 }
 
-/** One rep's top-N scores as a small horizontal box plot (inline SVG). */
-function distStrip(scores, scale, ref, short) {
+/** One rep's top-N values (ranks or scores) as a small horizontal box plot
+ *  (inline SVG). `opts.digits` sets the rounding in the tooltip and
+ *  `opts.noun` prefixes the median ("rank "). */
+function distStrip(scores, scale, ref, short, opts = {}) {
   if (!scores.length) return "";
   const W = 132, H = 18;
+  const d = opts.digits ?? 1, noun = opts.noun || "";
   const x = (v) => 3 + (W - 6) * Math.min(1, Math.max(0, (v - scale.lo) / (scale.hi - scale.lo)));
   const [p10, p25, p50, p75, p90] = [0.1, 0.25, 0.5, 0.75, 0.9].map((q) => quantile(scores, q));
-  const tip = `Median ${fmt(p50, 1)} · middle half ${fmt(p25, 1)}–${fmt(p75, 1)} · ` +
-    `10th–90th ${fmt(p10, 1)}–${fmt(p90, 1)}${short ? ` · ${short}` : ""}`;
+  const tip = `Median ${noun}${fmt(p50, d)} · middle half ${fmt(p25, d)}–${fmt(p75, d)} · ` +
+    `10th–90th ${fmt(p10, d)}–${fmt(p90, d)}${short ? ` · ${short}` : ""}`;
   return `<svg class="dist-strip${short ? " dist-short" : ""}" width="${W}" height="${H}"
       viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title>` +
     (ref != null ? `<line class="dist-ref" x1="${x(ref)}" x2="${x(ref)}" y1="1" y2="${H - 1}"/>` : "") +
@@ -745,7 +753,8 @@ function renderMatrix(grp, metrics, sort) {
     const arrow = active ? (sort.dir === -1 ? " ▾" : " ▴") : "";
     // Intuition lives on an info icon, not a bare header title — more
     // discoverable, and it won't clash with the sort click.
-    const info = c.help ? ` <span class="col-info" title="${esc(c.help)}">ⓘ</span>` : "";
+    const info = c.help
+      ? ` <span class="col-info" data-tip="${esc(c.help)}" aria-label="${esc(c.help)}" tabindex="0">ⓘ</span>` : "";
     if (c.dist) return `<th class="dist-th">${esc(c.label)}${info}</th>`;
     return `<th class="sortable ${c.text ? "" : "num"}${active ? " sorted" : ""}" ` +
       `data-key="${esc(c.key)}">${esc(c.label)}${arrow}${info}</th>`;
@@ -1420,13 +1429,31 @@ function renderConfigPanel() {
     </div>`;
 
   const changed = () => renderConfigPanel();
+  // A number box only fires "change" when it loses focus, so while someone
+  // types, Apply would sit disabled and look broken. Record the value and
+  // enable Apply on every keystroke (without re-rendering, which would steal
+  // focus), and let Enter apply straight away.
+  const markDirty = () => {
+    $("#cfg-apply").disabled = false;
+    $("#cfg-reset").disabled = false;
+    $("#cfg-status").textContent = "Unsaved changes";
+  };
+  const live = (input, set) => {
+    if (!input) return;
+    input.oninput = (e) => { set(e.target.value); markDirty(); };
+    input.onchange = (e) => { set(e.target.value); changed(); };
+    input.onkeydown = (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      set(e.target.value);
+      applyConfig();
+    };
+  };
   $$("#config-panel .seg-edit").forEach((el) => {
     const sg = d.segments[Number(el.dataset.i)];
-    el.querySelector(".seg-label").oninput = (e) => { sg.label = e.target.value; };
-    el.querySelector(".seg-label").onchange = changed;
-    const min = el.querySelector(".seg-min");
-    if (min) min.onchange = (e) => { sg.min = e.target.value === "" ? null : num(e.target.value); changed(); };
-    el.querySelector(".seg-target").onchange = (e) => { sg.target = Math.max(1, Math.floor(num(e.target.value))) || ""; changed(); };
+    live(el.querySelector(".seg-label"), (v) => { sg.label = v; });
+    live(el.querySelector(".seg-min"), (v) => { sg.min = v === "" ? null : num(v); });
+    live(el.querySelector(".seg-target"), (v) => { sg.target = Math.max(1, Math.floor(num(v))) || ""; });
     const rm = el.querySelector(".seg-remove");
     if (rm) rm.onclick = () => {
       const i = Number(el.dataset.i);
@@ -1507,7 +1534,43 @@ function loadData(data) {
     `${fmt(state.rows.length)} accounts · ${fmt(state.reps.length)} reps · ${fmt(owned)} allocated`;
 }
 
+/** Instant tooltips for the ⓘ icons. The native `title` tooltip waits about a
+ *  second and shows a question-mark cursor, which reads as broken. One shared
+ *  box, fixed-positioned so a scrolling table can't clip it. */
+function wireTooltips() {
+  const box = document.createElement("div");
+  box.className = "info-tip hidden";
+  box.setAttribute("role", "tooltip");
+  document.body.appendChild(box);
+  const show = (el) => {
+    box.textContent = el.dataset.tip;
+    box.classList.remove("hidden");
+    const r = el.getBoundingClientRect();
+    const w = box.offsetWidth, h = box.offsetHeight;
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+    const top = r.bottom + 6 + h > window.innerHeight ? r.top - h - 6 : r.bottom + 6;
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+  };
+  const hide = () => box.classList.add("hidden");
+  document.addEventListener("mouseover", (e) => {
+    const el = e.target.closest && e.target.closest("[data-tip]");
+    if (el) show(el); else hide();
+  });
+  document.addEventListener("focusin", (e) => {
+    const el = e.target.closest && e.target.closest("[data-tip]");
+    if (el) show(el);
+  });
+  document.addEventListener("focusout", hide);
+  document.addEventListener("scroll", hide, true);
+  // A click on the icon shouldn't sort the column underneath it.
+  document.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest(".col-info")) e.stopPropagation();
+  }, true);
+}
+
 async function init() {
+  wireTooltips();
   const res = await fetch("/api/plan");
   const data = await res.json();
   loadData(data);

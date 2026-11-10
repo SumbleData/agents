@@ -262,22 +262,10 @@ function renderOverview() {
         `Give it reps in the Team panel, or its accounts stay unallocated.</p>`);
       continue;
     }
-    // How many reps are off their peers by more than chance, on the top N.
-    let weaker = 0, stronger = 0;
-    for (const b of repBooks) {
-      if (!b.book.length || b.rep.in_balance === false) continue;
-      const k = ksForRep(b.book, grp, n);
-      if (k.n_peers && k.p < KS_SIGNIFICANCE) { if (k.ks < 0) weaker += 1; else stronger += 1; }
-    }
-    const verdict = weaker || stronger
-      ? [weaker && `${fmt(weaker)} weaker than peers`, stronger && `${fmt(stronger)} stronger`]
-          .filter(Boolean).join(", ")
-      : "no rep differs from peers by more than chance";
     parts.push(
       `<h3 class="terr-h3">${esc(seg.label)} <span class="terr-sub">` +
       `${fmt(repBooks.length)} reps · target ${fmt(n)} per rep · ` +
-      `ranked within ${fmt(grp.size)} accounts</span></h3>` +
-      `<p class="seg-verdict${weaker || stronger ? " seg-verdict-flag" : ""}">${esc(verdict)}</p>`);
+      `ranked within ${fmt(grp.size)} accounts</span></h3>`);
     parts.push(renderMatrix(grp, [
       ksMetric("top", n), distMetric(n, grp), ...(hasAct ? [activityMetric("top", n)] : []),
       ksMetric("all", n), ...(hasAct ? [activityMetric("all", n)] : []),

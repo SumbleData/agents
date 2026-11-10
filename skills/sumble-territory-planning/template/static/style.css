@@ -2163,7 +2163,8 @@ th.sortable:hover { color: var(--accent); }
 .seg-verdict-flag { color: #92400E; font-weight: 600; }
 .dist-cell { padding-top: 4px; padding-bottom: 4px; }
 .dist-th { white-space: nowrap; }
-.dist-strip { display: block; }
+.dist-strip { display: block; width: 100%; max-width: 160px; }
+.dist-strip line, .dist-strip rect { vector-effect: non-scaling-stroke; }
 .dist-strip .dist-whisker { stroke: var(--fg-muted); stroke-width: 1.5; }
 .dist-strip .dist-box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
 .dist-strip .dist-median { stroke: var(--fg); stroke-width: 2; }

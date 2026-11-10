@@ -434,6 +434,9 @@ function planTopN(seg) {
 }
 
 function topNFor(segKey) {
+  // A target being typed in the Segments panel, previewed before it's applied.
+  const preview = (state.previewTopN || {})[segKey];
+  if (preview) return preview;
   const seg = state.segments.find((x) => x.key === segKey);
   return seg ? planTopN(seg) : KS_TOP_N_FALLBACK;
 }
@@ -695,8 +698,11 @@ function distStrip(scores, scale, ref, short, opts = {}) {
   const [p10, p25, p50, p75, p90] = [0.1, 0.25, 0.5, 0.75, 0.9].map((q) => quantile(scores, q));
   const tip = `Median ${noun}${fmt(p50, d)} · middle half ${fmt(p25, d)}–${fmt(p75, d)} · ` +
     `10th–90th ${fmt(p10, d)}–${fmt(p90, d)}${short ? ` · ${short}` : ""}`;
-  return `<svg class="dist-strip${short ? " dist-short" : ""}" width="${W}" height="${H}"
-      viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title>` +
+  // Stretches to the column's width (the matrix uses a fixed table layout, so
+  // the column can be narrower than W); strokes keep their thickness.
+  return `<svg class="dist-strip${short ? " dist-short" : ""}" width="100%" height="${H}"
+      viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+      aria-label="${esc(tip)}"><title>${esc(tip)}</title>` +
     (ref != null ? `<line class="dist-ref" x1="${x(ref)}" x2="${x(ref)}" y1="1" y2="${H - 1}"/>` : "") +
     `<line class="dist-whisker" x1="${x(p10)}" x2="${x(p90)}" y1="${H / 2}" y2="${H / 2}"/>` +
     `<rect class="dist-box" x="${x(p25)}" y="4" width="${Math.max(2, x(p75) - x(p25))}" height="${H - 8}" rx="2"/>` +
@@ -1453,7 +1459,21 @@ function renderConfigPanel() {
     const sg = d.segments[Number(el.dataset.i)];
     live(el.querySelector(".seg-label"), (v) => { sg.label = v; });
     live(el.querySelector(".seg-min"), (v) => { sg.min = v === "" ? null : num(v); });
-    live(el.querySelector(".seg-target"), (v) => { sg.target = Math.max(1, Math.floor(num(v))) || ""; });
+    // The target drives the top N every distance and activity column reads, so
+    // preview it in the tables as you type, and apply it (refreshing the
+    // suggested moves) when you leave the box or press Enter.
+    const target = el.querySelector(".seg-target");
+    live(target, (v) => { sg.target = Math.max(1, Math.floor(num(v))) || ""; });
+    target.oninput = (e) => {
+      sg.target = Math.max(1, Math.floor(num(e.target.value))) || "";
+      state.previewTopN = { ...(state.previewTopN || {}), [sg.key]: sg.target || null };
+      markDirty();
+      render();
+    };
+    target.onchange = (e) => {
+      sg.target = Math.max(1, Math.floor(num(e.target.value))) || "";
+      applyConfig();
+    };
     const rm = el.querySelector(".seg-remove");
     if (rm) rm.onclick = () => {
       const i = Number(el.dataset.i);
@@ -1486,11 +1506,27 @@ function renderConfigPanel() {
     const bal = tr.querySelector(".team-balance");
     if (bal) bal.onchange = (e) => { r.in_balance = e.target.checked; changed(); };
   });
-  $("#cfg-reset").onclick = () => { state.draft = draftFromPlan(); renderConfigPanel(); };
+  $("#cfg-reset").onclick = () => {
+    state.draft = draftFromPlan();
+    state.previewTopN = null;
+    renderConfigPanel();
+    render();
+  };
   $("#cfg-apply").onclick = applyConfig;
 }
 
 async function applyConfig() {
+  // Enter fires both keydown and change; one apply is enough.
+  if (state.applying) return;
+  state.applying = true;
+  try {
+    await applyConfigNow();
+  } finally {
+    state.applying = false;
+  }
+}
+
+async function applyConfigNow() {
   const d = state.draft;
   $("#cfg-apply").disabled = true;
   $("#cfg-status").textContent = "Applying…";
@@ -1511,6 +1547,7 @@ async function applyConfig() {
   }
   const out = await res.json();
   loadData(out);
+  state.previewTopN = null;   // the plan now carries the target
   state.draft = draftFromPlan();
   renderConfigPanel();
   render();

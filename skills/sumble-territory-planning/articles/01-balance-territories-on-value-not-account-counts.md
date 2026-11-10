@@ -1,127 +1,105 @@
-# Balance territories on value, not account counts
+# Balance territories on account value
 
-Most territory planning deals accounts out until every rep's pile is the same size. The piles can be even and the books still rigged: one rep holding the segment's best accounts, everyone else working filler. The better question has two halves. Who holds the valuable accounts, and are they actually working them?
+Most territory plans already look past account count. They segment by company size, weight by revenue potential or tier, and keep books to a size a rep can work. What they rarely check is who holds the segment's best accounts. Two books can match on size and tier and still be uneven, with one rep holding several of the segment's top 20 and another holding none. So the question has two halves: who holds the valuable accounts, and are they working them?
 
-**Skill:** [`sumble-territory-planning`](../SKILL.md). Run it in Claude Code, Codex, or Cursor.
+This guide walks through a method for answering both, in five steps you can run on any CRM.
 
-Companion to [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md). Scoring answers *which accounts are strong*. This skill answers *are the right reps on them, and are the books fair*.
-
-## TLDR
-- An even account count is not a fair book. A rep with an exactly average-sized book can still hold most of the segment's best accounts.
-- **Rank accounts within each segment.** Account scoring can now be precise enough that #8 is meaningfully better than #15, and #15 is meaningfully better than #40. You lose that detail when you bucket accounts into coarse tiers like Tier A, Tier B, and Tier C.
-- **Measure each rep's top-account share.** Within a segment, look at each rep's share of the top 20, top 50, and top 100 accounts. Aim for similar shares at each cutoff. We saw a segment with 600 ranked accounts where one rep got the top 20 and another got the bottom 20. Same number of accounts, very different shot at quota. The Kolmogorov-Smirnov distance rolls every cutoff into one number: it is the gap at whichever cutoff is most lopsided.
-- **Rebalance untouched accounts first.** You can make books fairer without disrupting active work. It also gives reps a reason to work their accounts and make sure that activity is captured in the CRM.
-
-Every sales org redraws territories the same way. Count the accounts, divide by the reps, nudge until the piles look even. Maybe you weight by pipeline or named-account tier. The spreadsheet says twenty reps, about 75 accounts each, fair. Then a rep opens their book and finds 75 names they'd never call.
-
-## An even count is not a fair book
-
-Two reps with 75 accounts each can hold completely different books. One has eight of the segment's twenty best accounts. The other has none of them and 75 long-tail names. Count-based balance calls that fair. Everyone on the team knows it isn't, but they can't point at the number that proves it, because the only number they were handed was the count.
-
-Concentration is invisible to a headcount split because it's about *which* accounts, not *how many*. So stop measuring the size of the pile and start measuring its value.
-
-## The metric: Kolmogorov-Smirnov distance
-
-Rank every account in the segment by ICP score, 1 = best. Now take one rep and ask a simple question at every cutoff: what share of their accounts sits in the segment's top 10? The top 20? The top 100? Ask the same of every other rep in the segment, pooled together. Plot both as lines that climb from 0% to 100% as the cutoff loosens.
-
-If the rep was dealt the same mix as their peers, the two lines sit on top of each other. If they were dealt the segment's best accounts, their line climbs faster. The **Kolmogorov-Smirnov distance** is the widest vertical gap between the two lines, signed: positive when the rep's book is stronger, negative when it's weaker. It runs from −1 to +1. Under 0.1 is even. 0.1 to 0.25 is worth a look. Above 0.25 is a real difference.
-
-The app reads it on each rep's **top N**: their best N accounts, where N is the segment's target book size. Click a rep and you get the chart, both lines drawn and the gap marked, above their accounts. The whole-book reading is in the rep's header if you want it.
-
-### Why KS and not something simpler
-
-The obvious alternatives each break in a way that matters for territories.
-
-**An average score hides the shape.** A rep with five superb accounts and 45 dead ones can average the same as a rep with 50 middling ones. Those are different jobs. KS reads the whole distribution, so the two books look different, because they are.
-
-**A top-20 share depends on the cutoff you picked.** The share of the top 20, top 50 and top 100 is the right instinct, and it's what the TLDR recommends looking at. But you have to pick the cutoffs, and a book can look fair at 20 and rigged at 50. KS checks every cutoff at once and reports the worst one. It is literally "the top-x share gap, at the x where the gap is largest."
-
-**Raw scores are fragile; ranks aren't.** KS works on ranks within the segment. Recalibrate the score model so that 70 becomes 85 but the order holds, and the distance doesn't move. One freak account with a score of 99 can't drag a book's number around the way it drags an average.
-
-**Book size is handled on purpose.** Every rep is read on the same N slots. A giant book can't look strong just by carrying more names past N, and a book with fewer than N accounts counts its empty slots as empty, because a thin book really is less opportunity.
-
-**It knows when a gap is noise.** KS comes with a p-value. A ramping rep with eight accounts can look lopsided by luck alone, and a reading with p ≥ 0.05 is greyed out instead of flagged. Most territory dashboards can't tell a real imbalance from a small sample, so people learn to ignore them.
-
-**It's one number a RevOps lead can read.** Signed, bounded, with a rough guide for what's big. You can sort a table of twenty reps by it and the outliers float to the ends.
-
-It has limits, and I'd rather say so. KS tells you the books differ, not how many accounts to move; that's the balancer's job, below. It is most sensitive in the middle of the ranking and less so at the extreme top, so a rep holding the single best account in the segment won't move the number much on its own. And "within noise" means you can't tell, not that the books are equal.
-
-## Is the rep working it?
-
-Strength is half the question. The other half is activity: of the rep's top N accounts, what share has had a meeting, call, outbound email or Slack post in the window, or has a meeting already on the calendar for the next 28 days? A booked meeting is someone working the account, even if it hasn't happened yet.
-
-Splitting strength from activity turns a vague "seems off" into a diagnosis. The quadrant that costs you money is **strong book, low activity**: the segment's best accounts parked with someone who isn't touching them. No account count will ever surface that.
-
-Activity is only as good as the matching behind it. Calendars, Slack and email often name a company by a different domain than its CRM record: the `.ai` next to the `.com`, the old domain after a rebrand. The skill matches on every domain Sumble knows for the organization, not just the one in the CRM. When we ran it on our own territories, a straight domain match missed months of meetings with a handful of customers and marked them idle. Click any account and the app lists every event behind its number, the last 84 days and the next 28, so a rep can see what was counted and say what wasn't.
-
-## Rank within a segment, not globally
-
-A rep's book mixes segment sizes. A marquee account that falls just below your enterprise line still lives in Commercial, and a Commercial rank of 2 is not comparable to an Enterprise rank of 2. Average ranks across both universes and you get numbers no real book could produce.
-
-So the app compares each rep only against peers in their own segment, and ranks their accounts against that segment alone. What decides the segment is yours to pick: account score, headcount, revenue from your CRM, or another CRM field.
-
-## The value has to be real
-
-The distance is only as good as the "value" underneath it. If value means headcount, you've rebuilt the size ranking you were trying to escape. If it means gut feel, reps won't trust the reassignment.
-
-This skill takes account strength from a [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) run: a score calibrated to *your* closed-won deals, where every component links through to the people, teams, and projects behind it. (No scoring run yet? It falls back to Sumble's own account score via the API.) Either way, "the segment's best accounts" means best *for you*, not biggest, and a rep facing a proposed move can click through to why the account is worth taking.
-
-## What a balance number hides
-
-Each segment's table has one more row under the reps: **Unallocated**, the segment's unowned accounts read as if they were one more book. It gets a distance like everyone else, which answers a question count-based planning never asks: how much of the segment's value does nobody hold?
-
-Two other things distort every number, so fix them first:
-
-- **Double-allocated**: two reps own CRM records that resolve to the same company.
-- **Held, not owned**: a leader or founder sitting on accounts nobody works. The **Team** panel marks them as holding accounts rather than owning a book, so those accounts count as unallocated, with the holder's name kept on each one.
-
-## Suggest, review, export: the CRM is never touched
-
-An automated reassignment that's wrong is worse than the imbalance it fixed. So the balancer only *proposes*. It measures how uneven each segment's books are (a coefficient of variation across reps), then suggests the smallest set of owner moves that pulls them into balance: respecting each segment's target book size, handing wrong-segment accounts back, and giving unallocated strong accounts an owner. It never proposes moving an account someone is working.
-
-The proposals land on the **Changes** tab. Accept one, reject it, or pick a different rep from any account's owner dropdown. The whole app groups by *effective owner* (current owner plus your accepted moves), so the distances update the moment you decide, and you see a move help before you commit to it. When you're done, one button writes `actions.csv`: a plain list of approved owner changes keyed by CRM account id, ready for your admin or a follow-up agent run. Nothing is written back automatically.
-
-## What it looks like on a book
-
-The repo ships a runnable demo at [`examples/territory-planning/`](../../../examples/territory-planning): a fictitious vendor, *Northwind*, with 1,935 accounts and 20 reps (10 Enterprise, 10 Commercial). The data is synthetic, but it's built to show the shapes you'll recognize:
-
-Segments are cut by headcount: Enterprise is 1,000 employees and up.
-
-- **Tom Harris** holds the biggest Enterprise book and the strongest one, **+0.64** on the top 50, and works almost none of it: 8% of his top 50 have been touched. The sitting-on-value quadrant, invisible to an account count.
-- **Marcus Bell** is the other end: a normal-sized Enterprise book that skews clearly weaker than his peers', **−0.23** on the top 50 (p = 0.012).
-- **James Walker** is the foil: a smaller book, all of his top 50 worked.
-- **Grace Mitchell** is ramping. Her 30 accounts leave 20 empty slots in a 50-account book, she reads **−0.14** (greyed: within noise), and 0% worked reads as "new," not "failing."
-- **Alex Morgan** is the commercial star: the biggest book, the strongest top 150 (**+0.62**), and 81% of it worked.
-- **Commercial's Unallocated row** reads **+0.64** on its best 150. There's a cluster of strong accounts in there that nobody owns, sitting in a pool of 418 that is mostly long tail.
-
-Under the current settings the balancer makes 475 proposals (owners for 445 unallocated accounts, 15 wrong-segment handbacks, 15 rebalance moves), which together would take both segments from uneven (CV ≈ 0.3) to balanced (≈ 0.1) if every one were accepted. Which, of course, they shouldn't be blindly. That's what the review step is for.
-
-```bash
-cd examples/territory-planning
-python3 app.py        # http://localhost:8002
-```
-
-Stock Python 3.10+, no dependencies.
-
-## Run it on yours
-
-You need a coding agent (**Claude Code**, **OpenAI Codex**, or **Cursor**), your CRM ownership (Salesforce, HubSpot, a warehouse, or a CSV with account, owner, and a size signal), and ideally an existing account-scoring run for the value column. Connect whatever activity sources you have (Google Calendar, Gong, Fireflies, Granola, Salesforce email, Slack) and the activity columns light up. Skip them and you still get the distances and segment fit.
+**Get the skill:** [`sumble-territory-planning`](..) runs the method in Claude Code, Codex, or Cursor. See what it builds in the [live demo](https://territory-planning-demo.sumble.com/) (fictitious data).
 
 ```bash
 npx skills add SumbleData/agents --skill sumble-territory-planning
 ```
 
-Start a new agent session and run it (`/sumble-territory-planning` in Claude Code; "use the sumble-territory-planning skill" in Codex or Cursor). The interview sets your segments (Enterprise + Commercial by default), what decides them, whether the line is a hard rule or should be calibrated from your data, and your target book size per segment. Then:
+## TLDR
+- Balanced totals don't guarantee a balanced top. A rep with an average-sized, average-tier book can still hold most of the segment's best accounts.
+- **Rank accounts within each segment.** Account scoring can now be precise enough that #8 is meaningfully better than #15, and #15 is meaningfully better than #40. You lose that detail when you bucket accounts into coarse tiers like Tier A, Tier B, and Tier C. The [account scoring guide](../../sumble-account-scoring/articles/02-build-an-account-score-you-can-prospect-from.md) shows how to build a score that precise.
+- **Measure each rep's top-account share.** Within a segment, look at each rep's share of the top 100, top 500, and top 1,000 accounts. Aim for similar shares at each cutoff. We saw a segment with 600 ranked accounts where one rep got the top 20 and another got the bottom 20. Same number of accounts, very different shot at quota. The Kolmogorov-Smirnov distance rolls every cutoff into one number per rep.
+- **Rebalance untouched accounts first.** You can make books fairer without disrupting active work. It also gives reps a reason to work their accounts and make sure that activity is captured in the CRM.
 
-```bash
-cd territory_planning/<your-company>
-python3 app.py        # http://localhost:8002
-```
+## Even totals can hide an uneven top
 
-Tune the cut and the targets in the Segments panel, mark who owns a book in the Team panel, review the Changes tab, export `actions.csv`.
+Two reps can match on account count, revenue potential and tier mix and still hold very different books. One has eight of the segment's twenty best accounts, and the other has none. Tiers blur this, because #8 and #40 can both be Tier A. Reps usually sense the gap, but there's rarely a number that shows it.
 
-## The part that compounds
+The difference is in *which* accounts, not how many or how big in total. So measure each rep's share of the segment's best accounts directly.
 
-A territory plan is usually a once-a-year fire drill that's stale by Q2. Someone rebuilds it in a spreadsheet, everyone argues, and the books drift the moment a rep leaves or an account heats up. Keying territories to a live account score changes that. Re-run it, and the accounts that got stronger, the reps who fell behind on activity, and the new hire who needs a book all show up as fresh moves on the same tab. The plan stops being a project and becomes a habit.
+## Step 1: Score and rank every account
 
-It also sits on the same foundation as the rest of the GTM engine. [`sumble-crm-cleaning`](../../sumble-crm-cleaning/articles/01-clean-your-crm-against-the-org-graph.md) resolves every account to a real organization and catches the double-allocations before they distort your balance. [`sumble-account-scoring`](../../sumble-account-scoring/articles/01-account-score-should-tell-a-rep-what-to-do.md) tells you which accounts are worth fighting over. This skill puts the right reps on them.
+Start with a score for every account in the CRM, owned or not, that says how likely it is to buy from you. Then split accounts into segments, Enterprise and Commercial for most teams, cut by headcount or whatever line your sales motion already uses. Within each segment, rank the accounts from best to worst, 1 = best.
+
+Keep the ranks. Don't collapse them into tiers, because the whole method depends on telling #8 from #40.
+
+Everything after this is only as good as the score. If it mostly tracks company size, the method just tells you who got the biggest companies. To score accounts well, use the [`sumble-account-scoring`](../../sumble-account-scoring) skill. The [account scoring guide](../../sumble-account-scoring/articles/02-build-an-account-score-you-can-prospect-from.md) covers how to build a score calibrated to your own closed-won deals or your best ICP-fit companies.
+
+## Step 2: Measure each rep's share of the best accounts
+
+The Kolmogorov-Smirnov distance answers one question per rep: do they have a fair share of the segment's best accounts?
+
+![Three reps each hold 200 of a segment's 600 Tier A accounts. Rep A's accounts cluster near the top of the ranking and include 46 of the top 50 (KS distance +0.57). Rep B sits in the middle with 4 of the top 50 (−0.14). Rep C's accounts cluster near the bottom, with none of the top 50 (−0.55).](ks-distance-three-reps.svg)
+
+On a tier report these are three identical books, 200 Tier A accounts each. Rank the accounts from best to worst, though, and they're not close. Each box covers the middle half of a rep's accounts, and the green line is the median. Rep A's accounts sit near the top of the list, with 46 of the best 50. Rep B's are spread through the middle. Rep C's sit near the bottom, with none of the best 50. The Kolmogorov-Smirnov distance turns that picture into one number per rep: +0.57 for Rep A, −0.14 for Rep B and −0.55 for Rep C.
+
+How to read it:
+
+- 0 means a fair share of the good accounts. Positive means more, negative means less.
+- Under 0.1 is even. Above 0.25 is worth acting on.
+
+### Why the Kolmogorov-Smirnov distance
+
+The obvious alternatives each break in a way that matters for territories.
+
+- **An average score hides the shape of a book.** A rep with five superb accounts and 45 weak ones can average the same as a rep with 50 middling ones. Those are different jobs. The distance reads the whole distribution, so the two books come out different, because they are.
+- **A top-100 share depends on the cutoff you picked.** Looking at each rep's share of the top 100, 500 and 1,000 is the right instinct. But a book can look fair at 100 and uneven at 500. The distance checks every cutoff at once and reports the worst one.
+- **It's one number you can sort by.** Signed, between −1 and +1, with a rough guide for what's big. Sort twenty reps by it and the outliers end up at the top and bottom.
+
+## Step 3: Check whether the best accounts are being worked
+
+A strong book only pays off if someone works it. For each rep, take their best accounts, as many as a rep can realistically work, and count the share that had a meeting, call, outbound email or Slack post in the last 90 days, or have a meeting booked in the next 28. Every account counts the same. Call it Activity.
+
+Then read the two numbers together. The combination that costs you money is **strong book, low Activity**: the segment's best accounts are parked with someone who isn't touching them. Totals and tier mix won't surface it, and it's often the costliest pattern in a plan.
+
+## Step 4: Rebalance untouched accounts first
+
+Move as few accounts as you can, and start where nobody gets hurt:
+
+1. **Unowned strong accounts.** Give them to reps whose distance is below zero.
+2. **Strong accounts nobody has touched in the window.** Move them from reps with a high distance and low Activity to reps with room.
+3. **Wrong-segment accounts.** Hand them back to the right segment.
+
+Never move an account someone is working. Stop when each segment's reps sit within about 0.1 of each other, and keep each book to a size a rep can work. Have a person approve every move before anything changes in the CRM.
+
+Two things distort the numbers, so fix them first. Two reps can own CRM records that turn out to be the same company, which [CRM cleaning](../../sumble-crm-cleaning/articles/01-clean-your-crm-against-the-org-graph.md) catches. And a sales leader or founder can sit on accounts nobody works. Count those as unowned.
+
+## Step 5: Revisit allocations frequently
+
+A territory plan is usually rebuilt once a year, and it drifts from there as reps leave and accounts heat up. Re-run steps 1 to 4 each quarter, and whenever a rep joins or leaves. With a live account score, each run turns up the accounts that got stronger, the reps who fell behind on Activity and the new hire who needs a book, as a short list of moves rather than a new plan.
+
+## What it looks like on a book
+
+This repo ships a runnable demo at [`examples/territory-planning/`](../../../examples/territory-planning), built on a fictitious vendor, *Northwind*, with 1,935 accounts and 20 reps (10 Enterprise, 10 Commercial). The data is synthetic, but it's built to show the shapes you'll recognize. Segments are cut by headcount: Enterprise is 1,000 employees and up.
+
+| Rep | Accounts | Customers | Kolmogorov-Smirnov distance, top 50 | Activity, top 50 |
+|---|---:|---:|---:|---:|
+| Tom Harris | 65 | 2 | +0.64 | 8% |
+| James Walker | 44 | 4 | +0.24 | 100% |
+| Avery Brooks | 41 | 2 | +0.12 (could be luck) | 54% |
+| Hannah Wright | 34 | 3 | −0.08 (could be luck) | 76% |
+| Grace Mitchell | 30 | 2 | −0.14 (could be luck) | 0% |
+| Emily Clarke | 33 | 1 | −0.15 (could be luck) | 70% |
+| Sophie Turner | 37 | 1 | −0.16 (could be luck) | 57% |
+| Rachel Evans | 27 | 0 | −0.21 | 59% |
+| Marcus Bell | 35 | 5 | −0.23 | 43% |
+| Liam Foster | 30 | 2 | −0.24 | 60% |
+| *Unallocated* | 27 | — | −0.41 | 0% |
+
+This is the Enterprise segment after steps 1 to 3. Reps are sorted by their Kolmogorov-Smirnov distance on the top 50, and greyed numbers could be luck. On the page, a box in each row shows where that rep's top 50 accounts rank in the segment. Activity is the share of those 50 accounts someone has worked.
+
+- **Tom Harris** holds the biggest Enterprise book and the strongest one (+0.64 on the top 50), and works almost none of it: 8% of their top 50 have been touched. That's strong book, low Activity, and a size or tier check wouldn't flag it.
+- **Marcus Bell** is the other end: a normal-sized Enterprise book that's clearly weaker than their peers' (−0.23 on the top 50, p = 0.012).
+
+Step 4 on this data suggests 475 owner changes, mostly owners for unowned accounts, which would take both segments from uneven to balanced if every one were accepted.
+
+## Frequently asked questions
+
+### What does the Kolmogorov-Smirnov distance mean?
+
+It measures whether a rep has their fair share of the segment's best accounts. Rank every account in the segment from best to worst. At each cutoff (the top 100, the top 500, the top 1,000 and so on), compare the share of the rep's book inside it with the share of everyone else's. The distance is the biggest of those gaps, signed, so it runs from −1 to +1. In the diagram above, Rep A's +0.57 comes from the top 237 accounts: 78% of Rep A's book is in there, against 21% of the other two reps' books. That 57-point gap is the biggest at any cutoff. We measure each rep on their best N accounts, where N is the number a rep can work (50 in Enterprise and 150 in Commercial), so empty slots in a thin book count against it. A small book can also look uneven by chance, so treat a reading with a p-value of 0.05 or higher as noise.

@@ -21,15 +21,15 @@ import json
 import math
 from pathlib import Path
 
-ENTERPRISE_MIN = 150  # sales_people >= this -> Enterprise
+ENTERPRISE_MIN = 1000  # total employees >= this -> Enterprise
 COMPANY = {"name": "Northwind", "url": "northwind.example", "folder_slug": "northwind"}
 COMPANY_DOMAIN = "northwind.example"
 
 # Target accounts per rep, by segment — the "Target accounts per rep" the
-# Calibrate panel shows. The quotas below are built to land every book inside
+# Segments panel shows. The quotas below are built to land every book inside
 # +-40% of these, so the target is a number a reviewer can actually hold the
-# demo to. The Enterprise line sits at 150 sales people (not 500) so the
-# Enterprise pool is deep enough for 10 reps to carry ~50 accounts each.
+# demo to. The Enterprise line sits at 1,000 employees, which leaves an
+# Enterprise pool deep enough for 10 reps to carry ~50 accounts each.
 SEGMENT_CAPACITY = {"commercial": 150, "enterprise": 50}
 
 ENTERPRISE_REPS = [
@@ -117,7 +117,7 @@ def main() -> None:
     # where the tail reps ended up at a third of target. The spread within the
     # band is what gives the heatmaps something to show.
     ENT_QUOTA = {
-        "Tom Harris": 66,       # biggest book in the segment - and barely worked
+        "Tom Harris": 66,  # biggest book in the segment - and barely worked
         "James Walker": 47,
         "Avery Brooks": 43,
         "Sophie Turner": 40,
@@ -126,10 +126,10 @@ def main() -> None:
         "Hannah Wright": 34,
         "Liam Foster": 32,
         "Rachel Evans": 31,
-        "Grace Mitchell": 30,   # ramping - at the floor of the band
+        "Grace Mitchell": 30,  # ramping - at the floor of the band
     }
     COM_QUOTA = {
-        "Alex Morgan": 180,   # the star: biggest book, and the best worked
+        "Alex Morgan": 180,  # the star: biggest book, and the best worked
         "Jordan Lee": 128,
         "Sam Cooper": 116,
         "Kate Bennett": 108,
@@ -159,7 +159,7 @@ def main() -> None:
         oid = r["org_id"]
         sp = num(r.get("sales_people"))
         emp = num(r.get("employee_count_int"))
-        seg = "enterprise" if sp >= ENTERPRISE_MIN else "commercial"
+        seg = "enterprise" if emp >= ENTERPRISE_MIN else "commercial"
 
         # Synthetic ICP score: size-correlated + deterministic variety, 3-98.
         base = 30 + 9 * math.log10(sp + 1) + 5 * math.log10(emp + 1)
@@ -182,9 +182,7 @@ def main() -> None:
     for seg_key, quota in (("enterprise", ENT_QUOTA), ("commercial", COM_QUOTA)):
         left = dict(quota)
         for oid, _ in sorted(pool[seg_key], key=lambda t: (-t[1], t[0])):
-            live = [
-                (n, k * STAR_BIAS.get(n, 1.0)) for n, k in left.items() if k > 0
-            ]
+            live = [(n, k * STAR_BIAS.get(n, 1.0)) for n, k in left.items() if k > 0]
             if not live:
                 break  # every quota filled - the rest of the pool goes unowned
             x = h01("assign", oid) * sum(w for _, w in live)
@@ -349,11 +347,39 @@ def main() -> None:
                         "ts": f"2026-{mon:02d}-{dom_day:02d}",
                     }
                 )
-    write_csv(
-        raw / "activity" / "meetings.csv",
-        events,
-        ["source", "rep_email", "account_domain", "kind", "ts"],
-    )
+    # Emails and booked meetings go only on accounts already worked above, so
+    # which accounts read as worked (and every number in the README) holds.
+    # They give the account panel's activity log more than one kind of row.
+    worked = {(e["rep_email"], e["account_domain"]) for e in events}
+    emails, booked = [], []
+    for rep_email, dom in sorted(worked):
+        for k in range(int(h01("ne", dom) * 4)):
+            day = 1 + int(h01("eday", dom, k) * 60)
+            mon = 6 if day <= 30 else 7
+            emails.append(
+                {
+                    "source": "salesforce_email",
+                    "rep_email": rep_email,
+                    "account_domain": dom,
+                    "kind": "email_out" if h01("dir", dom, k) < 0.6 else "email_in",
+                    "ts": f"2026-{mon:02d}-{((day - 1) % 30) + 1:02d}",
+                }
+            )
+        if h01("booked", dom) < 0.35:
+            booked.append(
+                {
+                    "source": "upcoming_calendar",
+                    "rep_email": rep_email,
+                    "account_domain": dom,
+                    "kind": "meeting",
+                    "ts": f"2026-08-{1 + int(h01('bday', dom) * 28):02d}",
+                }
+            )
+    cols = ["source", "rep_email", "account_domain", "kind", "ts"]
+    write_csv(raw / "activity" / "meetings.csv", events, cols)
+    write_csv(raw / "activity" / "sf_email.csv", emails, cols)
+    # Meetings already on the calendar in the 28 days after as_of.
+    write_csv(raw / "upcoming" / "activity" / "meetings.csv", booked, cols)
 
     # ---- spec.json ----------------------------------------------------------
     spec = {
@@ -379,9 +405,9 @@ def main() -> None:
             },
         ],
         "boundary": {
-            "metric": "jf_people:Sales",
-            "column": "sales_people",
-            "label": "Sales headcount",
+            "metric": "total_employees",
+            "column": "employee_count_int",
+            "label": "Total employees",
             "thresholds": [{"segment": "enterprise", "min": ENTERPRISE_MIN}],
         },
         "activity": {
@@ -389,12 +415,11 @@ def main() -> None:
             # The synthetic meetings run June-July 2026; pin the window to them so
             # a rebuild on any later date still sees the activity.
             "as_of": "2026-07-31",
-            "sources": ["google_calendar"],
+            "sources": ["google_calendar", "salesforce_email", "upcoming_calendar"],
             "company_domain": COMPANY_DOMAIN,
         },
         "whitespace_top_n": 0,
         "strong_cutoff": 500,
-        "tier_decile_weight": 2,
     }
     with open(raw / "spec.json", "w", encoding="utf-8") as f:
         json.dump(spec, f, indent=2)
@@ -409,9 +434,7 @@ def main() -> None:
     ne, nc = len(ENTERPRISE_REPS), len(COMMERCIAL_REPS)
     print(f"[demo] reps: {ne} enterprise + {nc} commercial")
     for seg in ("enterprise", "commercial"):
-        sizes = sorted(
-            (books[n] for n in reps_seg if reps_seg[n] == seg), reverse=True
-        )
+        sizes = sorted((books[n] for n in reps_seg if reps_seg[n] == seg), reverse=True)
         cap = SEGMENT_CAPACITY[seg]
         pct = [f"{100 * b // cap}%" for b in sizes]
         print(f"[demo] {seg} books (target {cap}): {sizes} -> {' '.join(pct)}")

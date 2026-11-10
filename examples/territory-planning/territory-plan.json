@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-06T12:20:43-08:00",
+  "generated_at": "2026-11-10T11:58:22-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -8,7 +8,7 @@
   },
   "score_source": {
     "kind": "custom",
-    "path": "/private/tmp/claude-501/-Users-anthonygoldbloom-code-sumble/c590cfe5-3216-4ca1-bc49-b09b8aa2a733/scratchpad/agents/examples/territory-planning/_raw/score.csv",
+    "path": "_raw/score.csv",
     "note": "Fictitious demo: real public companies + synthetic scores."
   },
   "segments": [
@@ -26,13 +26,30 @@
     }
   ],
   "boundary": {
-    "metric": "jf_people:Sales",
-    "column": "sales_people",
-    "label": "Sales headcount",
+    "metric": "total_employees",
+    "column": "employee_count_int",
+    "label": "Total employees",
     "thresholds": [
       {
         "segment": "enterprise",
-        "min": 150.0
+        "min": 1000.0
+      }
+    ],
+    "options": [
+      {
+        "metric": "total_employees",
+        "label": "Total employees",
+        "column": "employee_count_int"
+      },
+      {
+        "metric": "score",
+        "label": "Account score",
+        "column": "score"
+      },
+      {
+        "metric": "jf_people:Sales",
+        "label": "Sales headcount",
+        "column": "sales_people"
       }
     ]
   },
@@ -221,9 +238,12 @@
   "activity": {
     "window_days": 90,
     "sources": [
-      "google_calendar"
+      "google_calendar",
+      "salesforce_email",
+      "upcoming_calendar"
     ],
     "as_of": "2026-07-31",
+    "attribution": "owner",
     "company_domain": "northwind.example",
     "freemail_excludes": [
       "163.com",
@@ -269,6 +289,5 @@
     "whitespace_top_n": 0
   },
   "strong_cutoff": 500,
-  "tier_decile_weight": 2,
   "territory_csv": "territory.csv"
 }

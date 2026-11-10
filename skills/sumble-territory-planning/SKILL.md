@@ -77,9 +77,9 @@ does not replace it.
   question is unanswerable, and a table of 0% states the opposite. One helper,
   `territory_lib.has_activity()` (mirrored by `hasActivityData()` in the UI), is
   the single source of truth. When it is false:
-  - the **Coverage matrix** and the **Activation** column are removed, replaced
-    by a short note saying why (Book strength is unaffected — it reads ICP score
-    and ownership only);
+  - the **Activity** columns are removed, replaced by a short note saying why
+    (the Kolmogorov-Smirnov distance is unaffected: it reads ICP score and
+    ownership only);
   - the **not-worked** and **strong-but-idle** flags are removed — with no
     events every owned account trivially satisfies "not worked", so the cards
     would indict the entire book;
@@ -138,7 +138,7 @@ who the reps are, where activity comes from. Everything after that is a dial in
 the app.
 
 So: **stop interviewing once the shape is settled, and ship.** The boundary
-threshold and the per-rep capacity are the two things the Calibrate panel exists
+threshold and the per-rep target are the two things the Segments panel exists
 to tune, so a first pass at both is enough — do not keep asking the user to
 refine numbers in chat that they are about to drag in the UI. Likewise, when a
 result looks wrong (a rep gets no moves, a segment routes nothing), **report it
@@ -161,7 +161,8 @@ territory_planning/{company}/
   territory.csv           one row per Sumble org: identity, score, segment,
                             owner, every flag, per-rep activity counts, proposal
   actions.csv             written by the app: approved owner changes for the CRM
-  static/                 UI: Calibrate panel, book-depth heatmaps, tables, move queue
+  static/                 UI: Segments + Team panels, rep tables, rep sheet, account panel
+  static/activity_log.json  every event per account, last 84 days + next 28 (account panel)
   README.md
   _raw/                   agent-written inputs + fetch responses + audit
 ```
@@ -190,11 +191,15 @@ company; no amount of name matching would have found it.
   reps own records for the same org: whoever has the most activity (ties
   alphabetical)
 - `other_owners` (str, pipe-joined) — the other claimants
+- `held_by` (str, pipe-joined) — on an unallocated account, the CRM owner(s)
+  sitting on it who are not reps (a queue, a leader, someone who left)
+- `crm_owners` (str, pipe-joined) — every owner name on the CRM records; the
+  Team panel re-derives `owner` from it when someone's role changes
 
 These 0/1 flag columns are the CSV baseline (computed at merge time against the
 canonical owner). **The app recomputes the attention flags live against the
 `effective owner`** (current owner + the user's accepted/manual allocations), so
-assigning an account on the Accounts tab clears/sets its flags and updates the
+assigning an account from a rep's sheet or its panel clears/sets its flags and updates the
 Overview immediately — the CSV columns are the exported snapshot, the UI is the
 working state.
 
@@ -206,13 +211,14 @@ working state.
   `strong_unallocated` instead.)
 - `double_allocated` — ≥2 active reps own records resolving to the same org
 - `segment_misfit` — the account's size segment ≠ its owner's segment
-- `worked` — the owner has ≥1 meeting, call, or **outbound** email with the
-  account in the window. Inbound email alone is the prospect doing the work, so
-  it is counted and displayed but does not clear this flag on its own.
+- `worked` — the owner (or anyone, with `attribution: "anyone"`) has ≥1
+  meeting, call, **outbound** email or Slack post with the account in the
+  window, or a meeting already booked in the next 28 days. Inbound email alone
+  is the prospect doing the work, so it is counted and displayed but does not
+  clear this flag on its own.
 - `strong_idle` — one of the **top `strong_cutoff` accounts by ICP score**
   (global, default 500), owned, and not worked: the strongest accounts nobody is
-  working. The app recomputes this live from a **Strong-account cutoff** control in
-  the sidebar (the CSV column is the baseline at the default). The `strong_unallocated`
+  working. The cutoff is `strong_cutoff` in `territory-plan.json`. The `strong_unallocated`
   highlight (strong + unallocated) is derived the same way, live in the app — it is
   not a CSV column.
 
@@ -221,8 +227,10 @@ is **not** shown as an attention highlight card — a territory review is about 
 existing book, not browsing net-new accounts.
 
 **Activity (per owning rep × this account only — never team-wide)**
-- `meetings`, `calls`, `emails_out`, `emails_in` (int)
-- `last_activity_date` (ISO date), `activity_sources` (pipe-joined)
+- `meetings`, `calls`, `emails_out`, `emails_in`, `messages` (int)
+- `last_activity_date` (ISO date, past only), `activity_sources` (pipe-joined)
+- `upcoming_meetings` (int), `next_meeting_date` (ISO date): meetings booked in
+  the next 28 days, from `_raw/upcoming/activity/`
 
 **Proposals**
 - `proposed_owner`, `proposal_reason`
@@ -345,20 +353,24 @@ Ask both halves in ONE message.
 default; don't make them invent it. They may rename, add (SMB, Mid-Market,
 Strategic), or drop to two. Store ordered **smallest → largest** via `order`.
 
-**(b) What decides which segment an account belongs to?** Offer these options
-and record the answer as `boundary.metric`:
+**(b) What decides which segment an account belongs to?** Propose **headcount
+(total employees)** as the default, first in the list and marked recommended:
+it's the cut most sales teams already use, Sumble has it for every account
+(whitespace included), and a line like "Enterprise is 1,000+ employees" is one
+a sales leader can defend. Offer these options and record the answer as
+`boundary.metric`:
 
 | Option | `metric` | Where the value comes from |
 |---|---|---|
+| **Headcount (total employees)** (recommended) | `total_employees` | Sumble. Already in `score.csv`; Path B fetches it. |
 | **Account score**: the best-fit accounts go to the top segment | `score` | The account-scoring `score.csv` (Path A) or `sumble_score` (Path B). Nothing extra to fetch. |
-| **Headcount (total employees)** | `total_employees` | Sumble. Already in `score.csv`; Path B fetches it. |
 | **Headcount in one job function** (e.g. Engineering, Sales) | `jf_people:{Function}` | Sumble. See the job-function rules in Q3b. |
 | **Revenue** | `revenue` | **The CRM, not Sumble** (Sumble has no revenue data). Salesforce `Account.AnnualRevenue`, HubSpot `annualrevenue`. Pull it into a `revenue` column of `ownership.csv` in Q4. |
 | **Another numeric CRM field** (a tier score, ARR, seat count) | `crm:{column}` | A column of that name in `ownership.csv`. |
 | **A column already in `score.csv`** | `custom:{column}` | That column verbatim. |
 
 The interactive question widget only fits four options, so offer the first four
-(score, total employees, job-function headcount, revenue) and let "Other" cover
+(total employees, score, job-function headcount, revenue) and let "Other" cover
 the CRM field and `score.csv` column cases.
 
 Say the consequence of each choice in one line when it matters:
@@ -582,7 +594,7 @@ Write these into `{output_root}/_raw/` with your file tools:
     "boundary": {"metric": "total_employees", "label": "Total employees",
                  "thresholds": [{"segment": "enterprise", "min": 1000}]},
     "activity": {"window_days": 90, "sources": ["google_calendar", "fireflies"],
-                 "company_domain": "acme.com"},
+                 "company_domain": "acme.com", "attribution": "owner"},
     "whitespace_top_n": 50,
     "strong_cutoff": 500
   }
@@ -595,7 +607,18 @@ Write these into `{output_root}/_raw/` with your file tools:
   - `in_balance` — blank/`1` normally; `0` for a **player-coach** whose book
     should be visible but neither measured for fairness nor moved off.
 - **`activity/{source}.csv`** — one file per source:
-  `source,rep_email,account_domain,kind,ts` (`kind` ∈ `meeting|call|email_out|email_in`)
+  `source,rep_email,account_domain,kind,ts` (`kind` ∈ `meeting|call|email_out|email_in|message`,
+  where `message` is a post in a shared Slack channel with the account)
+- **`upcoming/activity/{source}.csv`** (optional) — the same shape, for meetings
+  already on reps' calendars in the next 28 days. A booked meeting counts as
+  working the account and shows in the account's activity log.
+  Meeting tables synced into a CRM or warehouse usually hold only past
+  meetings, so read the calendars directly for these.
+- Account domains: activity matches on the account's CRM domain **and** any
+  `domain_alternates` column in the account table (`|`-separated). Calendars
+  often name a company by another domain (a `.ai` beside the `.com`, an old
+  domain after a rebrand), and without the alternates those meetings never
+  count.
 - **`accounts.csv`** (Path B only) — `crm_account_id,name,domain`
 - **`pipeline.csv`** (optional) — `domain,pipeline_value`
 
@@ -680,118 +703,56 @@ Python 3.10+. Override the port with `python3 app.py 9002` or `PORT=9002`.
 
 Tell them how to work it, in this order:
 
-1. **Overview** — a **rep heatmap** (this is the home page; there is no separate
-   Reps tab). There are always exactly **two tables** (strength + coverage); a
-   **segment filter** at the top (`All segments` by default, plus one pill per
-   segment) narrows the rows — every rep by default, or one segment's when
-   filtered. With `All segments`, a **Segment column** labels each row.
+1. **Overview** is the home page. A segment pill row sits on top (`All` plus one
+   pill per segment). Each segment gets one table: a row per rep plus an
+   **Unallocated** row, which reads the segment's unowned accounts as one more
+   book so you can see how much value nobody holds. Columns:
+   - **Accounts** and **Customers**, in this segment only.
+   - **Kolmogorov-Smirnov distance, top N** (the default sort). N is the
+     segment's target accounts per rep. The signed distance
+     compares where the rep's accounts sit in the segment's ranking against the
+     pooled accounts of every other rep in the segment: `0` is the same mix,
+     `+` skews stronger, `−` weaker, `±1` no overlap. The top-N reading compares
+     each rep's best N, so a big book can't look strong just by being big; a
+     top-N slot a rep can't fill counts as empty. (The whole-book reading is
+     still in the rep sheet's header.) Readings with p ≥ 0.05 are greyed: a small book can
+     differ by chance. Player-coaches (`in_balance=0`) get a reading but never
+     join anyone's peer pool. Rough guide: under 0.1 is even, 0.1 to 0.25 is
+     worth a look, above 0.25 is a real difference. `merge_territory.py` prints
+     every rep's distance and p-value; quote the significant outliers.
+   - **Top N ranks**, a small box plot of where the rep's best N rank in the segment (1 = best, at the left).
+   - **Activity, top N**: the share of the top N worked in
+     the window (a meeting, call, outbound email or Slack post, or a meeting
+     already booked in the next 28 days).
 
-   Rows are reps, with their **In-seg** account count. The strength table has one
-   metric column, **KS**; the coverage table has **Activation** plus **Whole
-   book** (share of everything they own in the segment that's been touched).
-   There is deliberately no top-N depth column: an earlier "average segment rank
-   of the top 25" column confused RevOps users more than it helped, and KS
-   already reads the whole book. The ranked accounts are one click away on the
-   KS value instead.
-
-   Conditional formatting shades each column across all rows shown (both
-   segments). **Every header sorts** — click to
-   sort, click again to flip. Below both tables sits the **suggested-moves CTA**
-   (see 3) and then the "also worth a look" flag cards.
-
-   Each matrix leads with a **summary column**, the headline metric and the
-   default sort (descending), with a plain-language tooltip on the header:
-   - **KS** (strength table, default sort). The signed two-sample
-     Kolmogorov-Smirnov distance between the scores of the rep's in-segment
-     accounts and the pooled scores of every other rep in the segment: the
-     widest gap between the two cumulative distributions. `0` = the same mix of
-     strong and weak accounts as their peers, `+` = skews stronger, `−` =
-     weaker, `±1` = no overlap. It compares the **mix, not the size** (book size
-     is the In-seg column), so a rep with 30 accounts and one with 300 can both
-     read 0. Green for positive, amber for negative, deeper further from 0.
-     Readings with p ≥ 0.05 are greyed and unshaded: a small book can look
-     different by chance. Player-coaches (`in_balance=0`) get a reading but are
-     never part of anyone else's peer pool.
-
-     **Clicking a KS value opens the rep's ranking** in the side panel: their
-     in-segment accounts strongest first with segment rank, score and worked
-     status, and a chart of the share of each book scoring at least each score
-     (this rep vs peers) with the widest gap marked. That gap is the KS number.
-     Clicking the rep's name still jumps to the Accounts tab.
-
-     Rough reading guide for users: under 0.1 is even, 0.1–0.25 is worth a
-     look, above 0.25 is a real difference. `merge_territory.py` prints every
-     rep's KS and p-value; quote the significant outliers in the merge summary.
-   - **Activation** (coverage table, default sort). Of the segment's top-tier
-     value the rep *holds* (a top-decile account by score counts double, the
-     rest of the top quartile once, everything below zero), the share they're
-     actually working. Book-size-independent, so `0%` is a rep sitting on strong
-     accounts, the clearest read on a player-coach. The top-decile multiplier is
-     the `tier_decile_weight` knob in `territory-plan.json` (default 2).
-
-   Two things make the ranks trustworthy, both learned the hard way:
-   - **Rank within a single segment only.** A rep's book mixes segment sizes — a
-     marquee account below the size line still lives in Commercial — and a
-     Commercial rank of 2 is not comparable to an Enterprise rank of 2. Averaging
-     ranks from two universes produces impossible numbers (an average below the
-     arithmetic floor of `(N+1)/2`). The matrix ranks each rep's accounts only
-     against their own segment, and counts only their **in-segment** accounts.
-   - **"In-seg" ≠ total book.** The count column is the rep's in-segment accounts,
-     which is often far below what they own — an enterprise rep sitting on a pile
-     of commercial-sized accounts (misfits to shed) is exactly what that gap
-     reveals.
-
-   (Book-balance itself — the coefficient-of-variation across reps — still drives
-   the Moves tab and the mover, it's just no longer the Overview's headline.)
-2. **Calibrate** (the left sidebar) — the two dials, each in its own box:
-   - **where the line between segments sits**, on the boundary metric
-   - **target accounts per rep, per segment**
-
-   Both preview live as you type — how many accounts land each side of the line,
-   and how many seats the capacity actually buys (`reps × cap`), including a
-   blunt *"N cannot be held"* when the segment has more accounts than seats.
-   **Committing a field** (leaving it or pressing Enter) re-runs the same four
-   phases the CLI runs and rewrites `territory-plan.json`, so the plan file always
-   matches what is on screen — there is no separate Apply button. The user's
-   accept / reject / manual decisions are always preserved (only the pipeline's own
-   suggestions are re-derived); a full reset is `suggest_moves.py --reset` from the
-   CLI.
-
-   A third box, **Strong-account cutoff**, sets how many top accounts (by ICP
-   score) count as "strong" for the *strong-but-idle* and *strong-but-unallocated*
-   attention flags. Unlike the two dials above it updates the flags **live** — it
-   doesn't touch the mover, so there's no Apply.
-3. **Review suggested moves** — the primary call to action. On **Overview** it's a
-   full-width button below the two matrices showing the pending count; clicking it
-   lands on Accounts with the queue filtered. On **Accounts** the filters are two
-   rows: a **primary row** (`All` · `✨ Suggested moves`) over a quieter
-   **secondary row** of the five attention flags. The flags are diagnostics you
-   browse; the queue is what you clear, and the layout should say so. (It used to
-   be one chip at the end of a row of six, which is where most reviewers failed to
-   find it.) The flags stay multi-select and OR together, unchanged.
-4. **Fix the double-allocations first.** Two reps on one company distorts every
+   **Clicking a rep's name opens their sheet**: the top-N chart (share of each
+   side in the segment's top x, this rep against peers, widest gap marked; that
+   gap is the distance), then their accounts on an **Idle** / **Customers** /
+   **All** filter with an owner dropdown on every row. Clicking a distance value
+   opens the same chart in the side panel with the ranked list.
+2. **Clicking an account** opens its panel: owner and a **Move to** dropdown,
+   activity counts for the window, the next booked meeting, and an **activity
+   log** listing every meeting, call, email and Slack post from the last 84
+   days and the next 28, one row per event with everyone who took part.
+3. **Segments** (left sidebar): what decides an account's segment (**Cut by**,
+   any metric `merge_territory.py` found: score, headcount, revenue or a CRM
+   field), where each segment starts, and the target accounts per rep. Add or
+   remove segments here. **Apply** re-derives segments and re-runs the
+   suggestions; decisions already made are kept.
+4. **Team** (left sidebar): everyone whose name is on CRM accounts. Mark each
+   as **Rep** (owns a book, with a segment and a "balanced" checkbox for
+   player-coaches) or **Holds accounts** (a leader or founder warehousing
+   accounts: those accounts count as unallocated, with the holder's name kept
+   in **Held by**). Apply re-derives ownership.
+5. **Fix the double-allocations first.** Two reps on one company distorts every
    other number.
-5. **Accounts** — every account, sortable, with a **Rank** column (global rank by
-   ICP score, 1 = best; ties to the strong-account cutoff). The last column,
-   **Assign to**, is an owner dropdown on *every* row: allocate any account to
-   anyone (or unassign), which records a manual move. Because the whole app groups
-   by **effective owner** (current owner + your accepted/manual moves), an
-   allocation here updates the **Overview** book heatmaps and attention flags
-   immediately — assign a strong-but-unallocated account and it leaves that card
-   and joins the new owner's book. When the balancer suggests a move, that owner
-   sits at the top of the same dropdown marked "suggested" (picking it accepts,
-   preserving the reason), the control is tinted, and a tiny **dismiss** link
-   rejects it — one control, no separate accept/reject buttons or Moves tab. The
-   CTA at the top of the tab narrows to the pending suggestions. Nothing is
-   written to a CRM — Export is the hand-off.
-6. **Export** — every approved change (accepted suggestion or manual assignment),
-   with a per-row **Dismiss** to drop one without leaving the tab (it reverts the
-   account). `actions.csv` is the hand-off to the CRM. **This app never writes to
-   your CRM.**
+6. **Changes** tab: every proposed owner change with accept / reject, a log of
+   each decision, and **Download actions.csv**, the hand-off to the CRM. **This
+   app never writes to your CRM.**
 
-Point them at the Calibrate panel for anything that looks off: a segment routing
-nothing usually means capacity, and a rep with implausible misfits usually means
-the boundary. Re-running `suggest_moves.py` from the CLI does the same thing and
+Point them at the Segments panel for anything that looks off: a segment routing
+nothing usually means the target, and a rep with implausible misfits usually
+means the cut. Re-running `suggest_moves.py` from the CLI does the same thing and
 refines around decisions already made; `--reset` starts over.
 
 **Close with the privacy note**: activity is counts and dates only, per owning

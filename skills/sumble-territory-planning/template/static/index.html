@@ -30,60 +30,62 @@
 
     <main class="terr-layout">
       <!-- ================= Calibrate sidebar ================= -->
-      <aside class="calibrate-panel" id="calibrate-panel">
-        <div class="panel-header">
-          <h2>Calibrate</h2>
-        </div>
-        <p class="panel-sub">
-          The two judgement calls in a territory plan: where the segment line
-          sits, and how many accounts each rep should carry. They preview live as
-          you type; leaving a field (or pressing Enter) re-runs the balancer.
-        </p>
-        <div id="calibrate-controls" class="calibrate-controls"></div>
-        <p id="calibrate-status" class="calibrate-status"></p>
-
-        <div class="cal-box strong-box">
-          <h4 class="cal-box-title">Strong-account cutoff</h4>
-          <p class="cal-box-sub">
-            An account counts as "strong" for the attention flags if it's in the
-            top N by ICP score. Updates the flags live — no re-suggest needed.
-          </p>
-          <label class="cal-field">
-            <span>Top N by score</span>
-            <input type="number" min="1" step="1" id="strong-cutoff" class="terr-input" />
-          </label>
-        </div>
-
-        <div class="calibrate-actions">
-          <button id="calibrate-reset-fields" class="btn-link" type="button">Reset fields</button>
-        </div>
-      </aside>
+      <aside class="calibrate-panel" id="config-panel"></aside>
 
       <section class="terr-main">
         <nav class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" role="tab">Overview</button>
-          <button class="tab" data-tab="accounts" role="tab">Accounts</button>
-          <button class="tab" data-tab="export" role="tab">Export</button>
+          <button class="tab" data-tab="changes" role="tab">Changes</button>
         </nav>
         <p id="tab-description" class="tab-description"></p>
 
       <!-- ================= Overview ================= -->
       <section id="view-overview" class="view">
         <div id="overview-segments"></div>
-        <div id="overview-moves-cta" class="moves-cta-wrap"></div>
-        <h4 class="terr-h4">Also worth a look</h4>
-        <p class="eval-diag-sub">Click any card to open that set in the Accounts tab.</p>
-        <div id="highlight-cards" class="highlight-cards"></div>
       </section>
 
-      <!-- ================= Accounts ================= -->
-      <section id="view-accounts" class="view hidden">
-        <div id="account-filters" class="filter-rows"></div>
+      <!-- ================= Changes ================= -->
+      <section id="view-changes" class="view hidden">
+        <div id="changes-summary" class="export-summary"></div>
+        <div class="btn-stack btn-stack-row">
+          <button id="export-actions-2" class="btn-download">Download actions.csv</button>
+          <button id="export-sheet-2" class="btn-download btn-download-secondary">Download territory.csv</button>
+        </div>
+        <h3 class="terr-h3">Proposed changes</h3>
+        <div id="changes-filters" class="filter-rows"></div>
+        <div class="table-wrap">
+          <table id="changes-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <h3 class="terr-h3">Log</h3>
+        <p class="eval-diag-sub">Every decision made in this app, newest first.</p>
+        <div class="table-wrap">
+          <table id="log-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      </section>
+    </main>
+
+    <!-- ================= One rep's book: a side sheet over the Overview ===== -->
+    <div id="rep-sheet-backdrop" class="sheet-backdrop hidden"></div>
+    <aside id="rep-sheet" class="rep-sheet hidden" role="dialog" aria-labelledby="rep-title">
+      <div class="breakdown-header">
+        <div>
+          <h2 id="rep-title"></h2>
+          <p class="eval-diag-sub" id="rep-meta"></p>
+        </div>
+        <button id="rep-close" class="btn-icon" aria-label="Close">×</button>
+      </div>
+        <div id="rep-ks" class="rep-ks-box hidden"></div>
+        <div id="rep-filters" class="filter-rows"></div>
         <div class="search-wrap">
           <input id="search-input" type="search"
-                 placeholder="Search name, domain, owner… (press / to focus)" autocomplete="off" />
-          <select id="rep-filter" class="terr-select"><option value="">All reps</option></select>
-          <select id="segment-filter" class="terr-select"><option value="">All segments</option></select>
+                 placeholder="Search name or domain… (press / to focus)" autocomplete="off" />
         </div>
         <div class="table-wrap">
           <table id="accounts-table">
@@ -96,25 +98,7 @@
           <span id="page-info" class="page-info"></span>
           <button id="page-next" class="btn-page" type="button">Next ›</button>
         </div>
-      </section>
-
-      <!-- ================= Export ================= -->
-      <section id="view-export" class="view hidden">
-        <div id="export-summary" class="export-summary"></div>
-        <div class="btn-stack btn-stack-row">
-          <button id="export-actions-2" class="btn-download">Download actions.csv</button>
-          <button id="export-sheet-2" class="btn-download btn-download-secondary">Download territory.csv</button>
-        </div>
-        <h3 class="terr-h3">Approved changes</h3>
-        <div class="table-wrap">
-          <table id="export-table">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-      </section>
-    </main>
+    </aside>
 
     <aside id="detail-panel" class="detail-panel hidden">
       <div class="breakdown-header">

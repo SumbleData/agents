@@ -27,6 +27,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
+import json
 import sys
 from pathlib import Path
 
@@ -64,6 +66,45 @@ def load_account_table(raw: Path, plan: dict) -> tuple[list[dict], str, str]:
     return tl.read_csv(path), "sumble_score", "sumble"
 
 
+LOG_PAST_DAYS = 84
+LOG_FUTURE_DAYS = 28
+
+
+def write_activity_log(
+    raw: Path, out: Path, org_by_domain: dict[str, str], as_of: _dt.date | None
+) -> int:
+    """Write every event per account, LOG_PAST_DAYS back to LOG_FUTURE_DAYS
+    ahead, for the account panel's log. One entry per (date, kind, source,
+    person, domain) with a count, newest first. Returns the entry count."""
+    today = as_of or _dt.date.today()
+    lo = (today - _dt.timedelta(days=LOG_PAST_DAYS)).isoformat()
+    hi = (today + _dt.timedelta(days=LOG_FUTURE_DAYS)).isoformat()
+    counts: dict[str, dict[tuple[str, str, str, str, str], int]] = {}
+    files = [*sorted((raw / "activity").glob("*.csv")),
+             *sorted((raw / "upcoming" / "activity").glob("*.csv"))]
+    for path in files:
+        for e in tl.read_csv(path):
+            dom = tl.norm_domain(e.get("account_domain"))
+            ts = str(e.get("ts") or "")[:10]
+            org_id = org_by_domain.get(dom)
+            if not org_id or not (lo <= ts <= hi):
+                continue
+            key = (ts, str(e.get("kind") or ""), str(e.get("source") or path.stem),
+                   tl.norm_email(e.get("rep_email")), dom)
+            bucket = counts.setdefault(org_id, {})
+            bucket[key] = bucket.get(key, 0) + 1
+    events = {
+        org_id: [[*k, n] for k, n in sorted(evs.items(), reverse=True)]
+        for org_id, evs in counts.items()
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({
+        "as_of": today.isoformat(), "past_days": LOG_PAST_DAYS,
+        "future_days": LOG_FUTURE_DAYS, "events": events,
+    }, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    return sum(len(v) for v in events.values())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--raw", required=True)
@@ -97,6 +138,13 @@ def main() -> None:
             "employee count."
         )
 
+    # Every cutoff metric the table can supply. The app's Segments panel
+    # switches between them, so each is copied onto the rows as metric:<name>.
+    ownership = tl.read_csv(raw / "ownership.csv")
+    options = tl.metric_options(plan, acct_rows, ownership, score_col)
+    boundary["options"] = options
+    component_cols = [c for c in acct_rows[0] if str(c).startswith(tl.COMPONENT_PREFIX)]
+
     # --- 1. collapse the account table to one record per org -------------------
     orgs: dict[str, dict] = {}
     for r in acct_rows:
@@ -116,6 +164,9 @@ def main() -> None:
                 "score": tl.to_float(r.get(score_col)),
                 "size_metric": tl.to_float(r.get(size_col)),
                 "sumble_url": r.get("sumble_url") or "",
+                "aliases": set(),
+                "metrics": {},
+                "components": {c: r.get(c, "") for c in component_cols},
             }
             orgs[org_id] = rec
         else:
@@ -123,8 +174,17 @@ def main() -> None:
             if CATEGORY_RANK.get(cat, 0) > CATEGORY_RANK.get(rec["account_category"], 0):
                 rec["account_category"] = cat
             rec["score"] = max(rec["score"], tl.to_float(r.get(score_col)))
+        for opt in options:
+            v = tl.to_float(r.get(opt["column"]))
+            rec["metrics"][opt["metric"]] = max(rec["metrics"].get(opt["metric"], v), v)
         if dom:
             rec["domains"].add(dom)
+        # Calendars, Slack and email often name a company by another domain than
+        # its CRM record (a .ai beside the .com, the old domain after a rebrand).
+        # Sumble's alternates catch those, so activity on them counts.
+        for alt in str(r.get("domain_alternates") or "").split("|"):
+            if tl.norm_domain(alt):
+                rec["aliases"].add(tl.norm_domain(alt))
         for key in ("crm_account_id", "crm_id"):
             if str(r.get(key) or "").strip():
                 rec["crm_account_ids"].add(str(r[key]).strip())
@@ -143,7 +203,6 @@ def main() -> None:
             by_crm_id.setdefault(cid, org_id)
 
     # --- 2. ownership ---------------------------------------------------------
-    ownership = tl.read_csv(raw / "ownership.csv")
     owners_by_org: dict[str, list[dict]] = {}
     unresolved = 0
     customers: set[str] = set()
@@ -177,7 +236,21 @@ def main() -> None:
     # --- 3. activity + pipeline ----------------------------------------------
     act_cfg = plan.get("activity") or {}
     window = tl.to_int(act_cfg.get("window_days"), 90) or 90
-    activity = tl.load_activity(raw, window, tl.parse_date(act_cfg.get("as_of")))
+    as_of = tl.parse_date(act_cfg.get("as_of"))
+    attribution = str(act_cfg.get("attribution") or "owner")
+    activity = tl.load_activity(raw, window, as_of)
+    # Meetings already booked (_raw/upcoming/activity/*.csv, same shape). A
+    # booked meeting is someone working the account; they get their own columns
+    # so the past counts stay what happened.
+    upcoming = tl.load_activity(raw / "upcoming", window, as_of)
+    # load_activity keeps each pair's latest date; the next meeting is the earliest.
+    upcoming_first: dict[tuple[str, str], dict] = {}
+    for path in sorted((raw / "upcoming" / "activity").glob("*.csv")):
+        for e in tl.read_csv(path):
+            key = (tl.norm_email(e.get("rep_email")), tl.norm_domain(e.get("account_domain")))
+            ts = str(e.get("ts") or "")[:10]
+            if ts and (key not in upcoming_first or ts < upcoming_first[key]["first_date"]):
+                upcoming_first[key] = {"first_date": ts}
     pipeline = {
         tl.norm_domain(p.get("domain") or p.get("url")): tl.to_float(p.get("pipeline_value"))
         for p in tl.read_csv(raw / "pipeline.csv")
@@ -185,10 +258,13 @@ def main() -> None:
 
     # --- 4. build one row per org --------------------------------------------
     rows: list[dict] = []
+    org_by_domain: dict[str, str] = {}   # for the activity log, below
     for org_id in sorted(orgs, key=lambda k: int(k) if str(k).isdigit() else 0):
         rec = orgs[org_id]
-        domains = sorted(rec["domains"])
-        primary_domain = domains[0] if domains else ""
+        primary_domain = sorted(rec["domains"])[0] if rec["domains"] else ""
+        domains = sorted(rec["domains"] | rec["aliases"])
+        for d in domains:
+            org_by_domain.setdefault(d, org_id)
         owners = owners_by_org.get(org_id, [])
 
         # Only ACTIVE reps count as an allocation. A queue, an integration user,
@@ -205,14 +281,22 @@ def main() -> None:
         for owner in distinct:
             email = next((o["owner_email"] for o in real if o["owner"] == owner), "") or \
                 active_reps.get(owner, {}).get("email", "")
-            act = tl.activity_for(activity, email, domains)
+            act = tl.activity_for(activity, email, domains, attribution)
             total = int(act["outbound_total"]) + int(act["email_in"])
             if total > best_activity:
                 chosen, chosen_email, best_activity = owner, email, total
 
         rep = active_reps.get(chosen, {})
         rep_segment = str(rep.get("segment") or "")
-        act = tl.activity_for(activity, chosen_email, domains)
+        act = tl.activity_for(activity, chosen_email, domains, attribution)
+        nxt = tl.activity_for(upcoming, chosen_email, domains, attribution)
+        next_dates = [
+            e["first_date"] for (who, d), e in upcoming_first.items()
+            if d in domains and (attribution == "anyone" or who == chosen_email)
+        ]
+        # Everyone on the CRM records, reps or not. The app's Team panel
+        # re-derives ownership from this when someone's role changes.
+        crm_owners = sorted({o["owner"] for o in owners})
 
         category = rec["account_category"]
         if not category or category not in CATEGORY_RANK:
@@ -241,19 +325,26 @@ def main() -> None:
             "account_segment": account_segment,
             "owner": chosen,
             "owner_email": chosen_email,
+            "held_by": "" if chosen else "|".join(crm_owners),
             "rep_segment": rep_segment,
             "unallocated": 0 if is_whitespace else unallocated,
             "double_allocated": 1 if len(distinct) > 1 else 0,
             "other_owners": "|".join(o for o in distinct if o != chosen),
             "segment_misfit": 1 if (chosen and rep_segment and account_segment and rep_segment != account_segment) else 0,
-            "worked": 1 if act["outbound_total"] > 0 else 0,
+            "worked": 1 if act["outbound_total"] + nxt["meeting"] > 0 else 0,
             "strong_idle": 0,  # needs the per-segment p75, computed below
             "meetings": act["meeting"],
             "calls": act["call"],
             "emails_out": act["email_out"],
             "emails_in": act["email_in"],
+            "messages": act["message"],
             "last_activity_date": act["last_activity_date"],
-            "activity_sources": act["activity_sources"],
+            "activity_sources": "|".join(sorted(
+                set(filter(None, act["activity_sources"].split("|")))
+                | set(filter(None, nxt["activity_sources"].split("|")))
+            )),
+            "upcoming_meetings": nxt["meeting"],
+            "next_meeting_date": min(next_dates) if nxt["meeting"] and next_dates else "",
             "pipeline_value": next(
                 (pipeline[d] for d in domains if d in pipeline), ""
             ),
@@ -261,6 +352,10 @@ def main() -> None:
             "proposed_owner": "",
             "proposal_reason": "",
             "proposal_status": "",
+            "crm_owners": "|".join(crm_owners),
+            **rec["components"],
+            **{f"{tl.METRIC_PREFIX}{o['metric']}": rec["metrics"].get(o["metric"], 0)
+               for o in options},
         })
 
     # account_segment / segment_misfit / strong_idle all hang off the boundary,
@@ -284,7 +379,11 @@ def main() -> None:
         ]
 
     rows.sort(key=lambda r: (-r["score"], r["org_id"]))
-    tl.write_csv(out_path, rows, tl.TERRITORY_COLUMNS)
+    tl.write_csv(out_path, rows, tl.territory_columns(rows))
+    # The cutoff metrics found above, for the Segments panel.
+    tl.write_json(plan_path, plan)
+    log_entries = write_activity_log(raw, root / "static" / "activity_log.json",
+                                     org_by_domain, as_of)
 
     # --- 5. audit -------------------------------------------------------------
     counts = {
@@ -320,6 +419,8 @@ def main() -> None:
     })
 
     print(f"[merge] wrote {out_path} · {counts['orgs']:,} orgs")
+    print(f"[merge] activity log: {log_entries:,} entries "
+          f"(last {LOG_PAST_DAYS} days, next {LOG_FUTURE_DAYS})")
     print(
         f"[merge] {counts['allocated']:,} allocated · {counts['unallocated']:,} unallocated · "
         f"{counts['double_allocated']:,} double-allocated · {counts['segment_misfit']:,} misfit · "

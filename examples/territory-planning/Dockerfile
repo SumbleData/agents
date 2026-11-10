@@ -3,9 +3,11 @@
 # $PORT and $HOST (must bind 0.0.0.0 to be reachable in a container). Basic auth
 # activates in the container via BASIC_AUTH_PASS (set as a deploy secret).
 #
-# NOTE: the container filesystem is ephemeral, so accept/reject decisions written
-# to territory.csv do not survive a restart. Deploy this to SHOW a plan; do the
-# reviewing locally, or export actions.csv before the instance recycles.
+# The container filesystem resets on every restart and deploy. To keep the
+# decisions people make on the deployed app, mount a volume and set DATA_DIR to
+# it (fly.io: a [mounts] section plus DATA_DIR in [env]). The app seeds the
+# volume from the files in this image and replays changes.jsonl on start.
+# Without DATA_DIR, decisions last only until the instance recycles.
 FROM python:3.12-slim
 WORKDIR /app
 COPY . /app

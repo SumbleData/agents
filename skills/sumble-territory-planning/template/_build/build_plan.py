@@ -131,6 +131,9 @@ def main() -> None:
             # Optional end of the window (YYYY-MM-DD). Unset means today; a fixed
             # date replays a snapshot, such as the public demo's synthetic calendar.
             "as_of": str(activity.get("as_of") or ""),
+            # "owner": only the owner's own activity counts. "anyone": anyone at
+            # the seller, so an account a CSM or SE is working reads as worked.
+            "attribution": str(activity.get("attribution") or "owner"),
             "company_domain": company_domain,
             "freemail_excludes": sorted(tl.FREEMAIL_DOMAINS),
         },
@@ -150,9 +153,6 @@ def main() -> None:
         },
         "strong_cutoff": tl.to_int(
             spec.get("strong_cutoff"), tl.DEFAULT_STRONG_CUTOFF
-        ),
-        "tier_decile_weight": tl.to_int(
-            spec.get("tier_decile_weight"), tl.DEFAULT_TIER_DECILE_WEIGHT
         ),
         "territory_csv": "territory.csv",
     }

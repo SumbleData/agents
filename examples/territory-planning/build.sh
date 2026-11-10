@@ -34,6 +34,16 @@ python3 "$TPL/_build/build_plan.py"      --raw "$DEMO/_raw"
 python3 "$TPL/_build/merge_territory.py" --raw "$DEMO/_raw"
 python3 "$TPL/_build/suggest_moves.py"   --dir "$DEMO"
 
+# The pipeline needs an absolute score.csv path; the committed plan shouldn't
+# carry whoever built it's home directory.
+python3 - "$DEMO/territory-plan.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+plan = json.load(open(path, encoding="utf-8"))
+plan["score_source"]["path"] = "_raw/score.csv"
+json.dump(plan, open(path, "w", encoding="utf-8"), indent=2)
+PY
+
 echo ">> injecting the demo banner"
 python3 "$DEMO/_banner.py" "$DEMO/static/index.html"
 

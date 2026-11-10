@@ -61,12 +61,13 @@ MIN_ACCOUNTS_FOR_SEGMENT_GUESS = 3
 # size — the failure mode that makes "# of DevOps engineers" a bad boundary.
 MAX_ZERO_FRACTION_BELOW = 0.30
 
-ACTIVITY_KINDS = ("meeting", "call", "email_out", "email_in")
+# `message` is a post in a shared Slack channel with the account (Slack Connect).
+ACTIVITY_KINDS = ("meeting", "call", "email_out", "email_in", "message")
 
 # Activity that counts as the rep actually working the account. Inbound email
 # alone is the prospect doing the work, so it is tracked but does not clear the
 # "not being worked" flag on its own.
-OUTBOUND_KINDS = ("meeting", "call", "email_out")
+OUTBOUND_KINDS = ("meeting", "call", "email_out", "message")
 
 # Categories included in book-balance maths. Customers are excluded by default:
 # a rep is not "overloaded" because they own renewals, and moving a customer
@@ -83,11 +84,6 @@ DEFAULT_WHITESPACE_TOP_N = 50
 # per-segment — "the strongest accounts nobody is working" is a book-wide
 # question. Adjustable live in the app; this is the default / CSV baseline.
 DEFAULT_STRONG_CUTOFF = 500
-
-# Weight the TOP DECILE of a segment gets, relative to the rest of the top
-# quartile (=1), in the Overview's Activation metric. 2 = a top-decile
-# account counts double. Purely a display metric, computed in the app.
-DEFAULT_TIER_DECILE_WEIGHT = 2
 
 
 def rep_in_balance(rep: dict[str, Any]) -> bool:
@@ -128,14 +124,34 @@ def effective_capacity(
 TERRITORY_COLUMNS = [
     "org_id", "name", "domain", "crm_account_id", "account_category",
     "score", "score_source", "size_metric", "size_metric_name",
-    "account_segment", "owner", "owner_email", "rep_segment",
+    "account_segment", "owner", "owner_email", "held_by", "rep_segment",
     "unallocated", "double_allocated", "other_owners", "segment_misfit",
     "worked", "strong_idle",
-    "meetings", "calls", "emails_out", "emails_in",
+    "meetings", "calls", "emails_out", "emails_in", "messages",
     "last_activity_date", "activity_sources",
+    "upcoming_meetings", "next_meeting_date",
     "pipeline_value", "sumble_url",
     "proposed_owner", "proposal_reason", "proposal_status",
+    "crm_owners",
 ]
+
+
+# Optional score breakdown: any account-table column named "component:<name>"
+# (e.g. "component:Size") rides through to territory.csv and shows as a column
+# in the rep view. The app never computes with them.
+COMPONENT_PREFIX = "component:"
+# Every cutoff metric the account table can supply, one column each
+# ("metric:score", "metric:total_employees", ...), so the app's Segments panel
+# can switch what decides an account's segment without re-running the pipeline.
+METRIC_PREFIX = "metric:"
+
+
+def territory_columns(rows: list[dict[str, Any]]) -> list[str]:
+    """TERRITORY_COLUMNS plus any component and metric columns, first-seen order."""
+    extra: list[str] = []
+    for r in rows[:1]:
+        extra = [k for k in r if str(k).startswith((COMPONENT_PREFIX, METRIC_PREFIX))]
+    return TERRITORY_COLUMNS + extra
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +331,10 @@ def crm_metric_source(metric: str) -> str:
 
 
 def attach_crm_metric(
-    acct_rows: list[dict[str, Any]], ownership: list[dict[str, Any]], column: str
+    acct_rows: list[dict[str, Any]],
+    ownership: list[dict[str, Any]],
+    column: str,
+    out_column: str = CRM_METRIC_COLUMN,
 ) -> int:
     """Copy a numeric CRM field from ownership.csv onto the account rows as
     CRM_METRIC_COLUMN, in place. Matches on CRM id, then domain, then name —
@@ -354,7 +373,7 @@ def attach_crm_metric(
             val = by_domain.get(dom) if dom else None
         if val is None:
             val = by_name.get(nm) if nm else None
-        r[CRM_METRIC_COLUMN] = val if val is not None else 0.0
+        r[out_column] = val if val is not None else 0.0
         if val is not None:
             filled += 1
     return filled
@@ -554,20 +573,55 @@ def ks_signed(book: list[float], peers: list[float]) -> tuple[float, float]:
     return round(best, 4), ks_pvalue(best_abs, n, m)
 
 
+# How many of each rep's best accounts the Kolmogorov-Smirnov distance compares,
+# by segment key. Roughly the book a rep in that segment can work. Segments not
+# listed fall back to their default_capacity, then to KS_TOP_N_FALLBACK. Mirrored
+# by KS_TOP_N_DEFAULTS in static/app.js; tunable live in the app's sidebar.
+KS_TOP_N_FALLBACK = 50
+
+
+def ks_top_n_for(segment: dict[str, Any]) -> int:
+    """How many of each rep's best accounts the top-N distance compares: the
+    segment's target accounts per rep (`default_capacity`), so "is this book
+    as strong as its peers'" is asked of the book a rep is meant to carry.
+    A plan without a target falls back to `ks_top_n`, then KS_TOP_N_FALLBACK."""
+    return (
+        to_int(segment.get("default_capacity"))
+        or to_int(segment.get("ks_top_n"))
+        or KS_TOP_N_FALLBACK
+    )
+
+
+def top_n_scores(book: list[float], n: int) -> list[float]:
+    """A rep's best `n` scores, strongest first. A book with fewer than `n`
+    accounts is padded with empty slots scoring 0, so a thin book reads weaker
+    than a full one of the same mix: fewer accounts means fewer chances."""
+    best = sorted(book, reverse=True)[:n]
+    return best + [0.0] * (n - len(best))
+
+
 def ks_by_segment(
     rows: list[dict[str, Any]],
     reps: list[dict[str, Any]],
     owner_field: str = "owner",
+    top_n: dict[str, int] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
-    """segment -> rep -> {ks, p, n, n_peers} for every rep with an in-segment
-    book. Mirrors ksForRep() in static/app.js.
+    """segment -> rep -> {ks, p, n, top_n, n_peers} for every rep with an
+    in-segment book. Mirrors ksForRep() in static/app.js. With no `top_n`
+    the distance compares whole books; the Overview shows both readings.
 
     A rep's book is the accounts they own whose size puts them in the rep's
     own segment (whitespace excluded) — the same in-segment book the Overview
-    ranks. Peers are the other reps in that segment who count toward balance;
-    a player-coach (in_balance=0) still gets a reading but never sets the norm
+    ranks. With `top_n`, the distance compares the rep's best `top_n[segment]` accounts with
+    each peer's best `top_n[segment]`, pooled; short books are padded with empty
+    slots scoring 0 (see top_n_scores). So book size counts, accounts past N
+    don't, and every rep in a segment is read on the same number of slots.
+    Peers are the other reps in that segment who count toward balance; a
+    player-coach (in_balance=0) still gets a reading but never sets the norm
     for anyone else.
     """
+    whole_book = top_n is None
+    top_n = top_n or {}
     seg_of = {str(r.get("name") or ""): str(r.get("segment") or "") for r in reps
               if truthy(r.get("is_rep", "1"))}
     in_bal = {str(r.get("name") or ""): rep_in_balance(r) for r in reps}
@@ -581,16 +635,26 @@ def ks_by_segment(
             continue
         books.setdefault(owner, []).append(to_float(row.get("score")))
 
+    def n_for(seg: str) -> int:
+        return top_n.get(seg) or ks_top_n_for({"key": seg})
+
     out: dict[str, dict[str, dict[str, Any]]] = {}
     for rep, book in sorted(books.items()):
         seg = seg_of[rep]
+        n = None if whole_book else n_for(seg)
+
+        def pick(scores: list[float], n: int | None = n) -> list[float]:
+            return scores if n is None else top_n_scores(scores, n)
+
         peers = [
             s for other, ob in books.items()
             if other != rep and seg_of.get(other) == seg and in_bal.get(other, True)
-            for s in ob
+            for s in pick(ob)
         ]
-        d, p = ks_signed(book, peers)
-        out.setdefault(seg, {})[rep] = {"ks": d, "p": p, "n": len(book), "n_peers": len(peers)}
+        d, p = ks_signed(pick(book), peers)
+        out.setdefault(seg, {})[rep] = {
+            "ks": d, "p": p, "n": len(book), "top_n": n, "n_peers": len(peers),
+        }
     return out
 
 
@@ -655,22 +719,35 @@ def load_activity(
     return out
 
 
+ACTIVITY_ATTRIBUTIONS = ("owner", "anyone")
+
+
 def activity_for(
     activity: dict[tuple[str, str], dict[str, Any]],
     rep_email: str,
     domains: Iterable[str],
+    attribution: str = "owner",
 ) -> dict[str, Any]:
-    """Sum one rep's activity across every domain an account is known by (a CRM
-    duplicate or a Sumble-matched url can give the same org two domains)."""
+    """Sum activity on an account across every domain it is known by (a CRM
+    duplicate or a Sumble-matched url can give the same org two domains).
+
+    `attribution="owner"` counts only `rep_email`'s own events. `"anyone"`
+    counts every event from anyone at the seller, so an account a CSM or
+    engineer is working reads as worked even when its owner hasn't touched it.
+    """
     totals: dict[str, Any] = {k: 0 for k in ACTIVITY_KINDS}
     totals["last_activity_date"] = ""
     sources: set[str] = set()
     rep = norm_email(rep_email)
-    if rep:
-        for dom in {norm_domain(d) for d in domains if d}:
-            bucket = activity.get((rep, dom))
-            if not bucket:
-                continue
+    doms = {norm_domain(d) for d in domains if d}
+    if attribution == "anyone":
+        buckets = [b for (_, dom), b in activity.items() if dom in doms]
+    elif rep:
+        buckets = [activity[(rep, dom)] for dom in doms if (rep, dom) in activity]
+    else:
+        buckets = []
+    if buckets:
+        for bucket in buckets:
             for k in ACTIVITY_KINDS:
                 totals[k] += int(bucket.get(k, 0))
             sources |= set(bucket.get("sources") or ())
@@ -820,6 +897,240 @@ def recompute_segments(plan: dict[str, Any], rows: list[dict[str, Any]]) -> None
             r["strong_idle"] = 1
 
 
+def metric_options(
+    plan: dict[str, Any],
+    acct_rows: list[dict[str, Any]],
+    ownership: list[dict[str, Any]],
+    score_col: str,
+) -> list[dict[str, str]]:
+    """Every cutoff metric this account table can supply, as
+    `{metric, label, column}`, the plan's own boundary metric first.
+
+    Offered: the account score; total employees and each `<function>_people`
+    headcount column that has data; revenue (or another `crm:` field) when
+    ownership.csv carries it; and anything listed in `boundary.options`.
+    Each CRM field is copied onto the rows under its own column so several can
+    be offered at once.
+    """
+    boundary = plan.get("boundary") or {}
+    header = list(acct_rows[0].keys()) if acct_rows else []
+
+    def has_data(col: str) -> bool:
+        return any(to_float(r.get(col)) for r in acct_rows)
+
+    wanted: list[str] = [str(boundary.get("metric") or "total_employees"), "score",
+                         "total_employees"]
+    for col in header:
+        if col.endswith("_people") and col != "jf_people":
+            wanted.append(f"jf_people:{col[: -len('_people')].replace('_', ' ').title()}")
+    if any("revenue" in o for o in ownership):
+        wanted.append("revenue")
+    for opt in boundary.get("options") or []:
+        wanted.append(str(opt.get("metric") if isinstance(opt, dict) else opt))
+
+    out: list[dict[str, str]] = []
+    seen_cols: set[str] = set()
+    for metric in wanted:
+        metric = metric.strip()
+        if not metric or any(o["metric"] == metric for o in out):
+            continue
+        source = crm_metric_source(metric)
+        if source:
+            if not any(source in o for o in ownership):
+                continue
+            col = f"crm_{slugify(source)}"
+            attach_crm_metric(acct_rows, ownership, source, out_column=col)
+        elif metric == "score":
+            col = score_col
+        else:
+            col = resolve_size_column({"boundary": {"metric": metric}}, header)
+        is_current = metric == str(boundary.get("metric") or "")
+        if is_current and str(boundary.get("column") or "").strip():
+            col = str(boundary["column"]).strip()
+        if col in seen_cols or not acct_rows or col not in acct_rows[0]:
+            continue
+        if not is_current and not has_data(col):
+            continue
+        seen_cols.add(col)
+        label = (str(boundary.get("label") or "") if is_current else "") or metric_label(metric)
+        out.append({"metric": metric, "label": label, "column": col})
+    return out
+
+
+def owner_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Accounts each CRM owner's name is on, from `crm_owners`."""
+    counts: dict[str, int] = {}
+    for r in rows:
+        for o in {o for o in str(r.get("crm_owners") or "").split("|") if o}:
+            counts[o] = counts.get(o, 0) + 1
+    return counts
+
+
+def apply_roster(plan: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+    """Re-derive who owns each account from its CRM owners and the roster, in
+    place: `owner`, `owner_email`, `rep_segment`, `held_by`, `unallocated`,
+    `double_allocated`, `other_owners`, and allocated/unallocated
+    `account_category`.
+
+    Only a rep (`is_rep`) owns an account. Anyone else on the CRM record holds
+    it: a queue, someone who left, or a warehouse owner such as a sales leader
+    sitting on accounts nobody works. Their accounts are unallocated, with the
+    holder's name kept in `held_by`. When several reps own one company, the
+    current owner keeps it if they are still a rep, otherwise the first name
+    alphabetically; merge_territory.py picks by activity on a full rebuild.
+
+    A sheet built before `crm_owners` existed is left alone.
+    """
+    if not rows or "crm_owners" not in rows[0]:
+        return
+    reps = {str(r.get("name")): r for r in plan.get("reps") or [] if truthy(r.get("is_rep"))}
+    for row in rows:
+        owners = sorted({o for o in str(row.get("crm_owners") or "").split("|") if o})
+        active = [o for o in owners if o in reps]
+        current = str(row.get("owner") or "")
+        chosen = current if current in active else (active[0] if active else "")
+        rep = reps.get(chosen) or {}
+        if chosen != current:
+            row["owner_email"] = norm_email(rep.get("email"))
+        row["owner"] = chosen
+        row["rep_segment"] = str(rep.get("segment") or "") if chosen else ""
+        row["held_by"] = "" if chosen else "|".join(owners)
+        category = str(row.get("account_category") or "")
+        row["unallocated"] = 0 if (chosen or category in WHITESPACE_CATEGORIES) else 1
+        row["double_allocated"] = 1 if len(active) > 1 else 0
+        row["other_owners"] = "|".join(o for o in active if o != chosen)
+        if category in ("allocated", "unallocated"):
+            row["account_category"] = "allocated" if chosen else "unallocated"
+
+
+def set_metric(plan: dict[str, Any], rows: list[dict[str, Any]], metric: str) -> None:
+    """Switch the cutoff metric to one of `boundary.options`, in place: the
+    plan's boundary and every row's `size_metric`. Thresholds are the
+    caller's to set, since a line on one metric means nothing on another."""
+    options = {str(o.get("metric")): o for o in (plan.get("boundary") or {}).get("options") or []}
+    if metric not in options:
+        raise ValueError(f"unknown cutoff metric: {metric!r}")
+    opt = options[metric]
+    col = f"{METRIC_PREFIX}{metric}"
+    if rows and col not in rows[0]:
+        raise ValueError(f"the sheet has no {col!r} column; re-run merge_territory.py")
+    boundary = plan["boundary"]
+    boundary["metric"] = metric
+    boundary["label"] = str(opt.get("label") or metric_label(metric))
+    boundary["column"] = str(opt.get("column") or "")
+    for row in rows:
+        row["size_metric"] = row.get(col, 0)
+        row["size_metric_name"] = boundary["label"]
+
+
+def apply_config(
+    plan: dict[str, Any], rows: list[dict[str, Any]], config: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply the app's Segments and Team panel to the plan and the sheet, in place.
+
+    `config`:
+      metric    the cutoff metric (one of boundary.options)
+      segments  [{key, label, min, target}], any order. The segment with no
+                `min` (or the lowest) is the smallest; each other one starts at
+                its `min`, inclusive. `target` is accounts per rep: the
+                capacity the mover fills to and the top N the distance reads.
+                A new segment may carry any temporary key; the roster can
+                refer to it by that key.
+      roster    [{name, is_rep, segment, in_balance}] for anyone whose role
+                changed; a name not yet in the plan is added.
+
+    Re-derives ownership and segments. Proposals are the caller's to refresh.
+    """
+    segs_in = list(config.get("segments") or [])
+    if not segs_in:
+        raise ValueError("at least one segment is needed")
+    metric = str(config.get("metric") or (plan.get("boundary") or {}).get("metric") or "")
+    if metric and metric != str((plan.get("boundary") or {}).get("metric") or ""):
+        set_metric(plan, rows, metric)
+
+    def min_of(s: dict[str, Any]) -> float | None:
+        raw = s.get("min")
+        return None if raw is None or str(raw).strip() == "" else to_float(raw)
+
+    smallest = [s for s in segs_in if min_of(s) is None]
+    if len(smallest) > 1:
+        raise ValueError("only the smallest segment can have no starting value")
+    ordered = smallest + sorted(
+        (s for s in segs_in if min_of(s) is not None), key=lambda s: min_of(s) or 0.0
+    )
+    mins = [min_of(s) for s in ordered[1:]]
+    if len(set(mins)) != len(mins):
+        raise ValueError("two segments can't start at the same value")
+    if any(m is not None and m < 0 for m in mins):
+        raise ValueError("a segment can't start below 0")
+
+    old_keys = {str(s.get("key")) for s in plan.get("segments") or []}
+    key_map: dict[str, str] = {}
+    used: set[str] = set()
+    segments: list[dict[str, Any]] = []
+    for i, s in enumerate(ordered, start=1):
+        label = str(s.get("label") or "").strip() or f"Segment {i}"
+        given = str(s.get("key") or "").strip()
+        key = given if given in old_keys and given not in used else slugify(label) or f"segment-{i}"
+        base, n = key, 2
+        while key in used:
+            key, n = f"{base}-{n}", n + 1
+        used.add(key)
+        if given:
+            key_map[given] = key
+        target = to_int(s.get("target"))
+        segments.append({
+            "key": key, "label": label, "order": i,
+            "default_capacity": target or None, "ks_top_n": target or None,
+        })
+    plan["segments"] = segments
+    plan["boundary"]["thresholds"] = [
+        {"segment": seg["key"], "min": min_of(src)}
+        for seg, src in zip(segments[1:], ordered[1:])
+    ]
+
+    reps = plan.setdefault("reps", [])
+    by_name = {str(r.get("name")): r for r in reps}
+    for change in config.get("roster") or []:
+        name = str(change.get("name") or "").strip()
+        if not name:
+            continue
+        rep = by_name.get(name)
+        if rep is None:
+            rep = {"name": name, "email": "", "segment": "", "is_rep": False,
+                   "capacity": None, "in_balance": True}
+            reps.append(rep)
+            by_name[name] = rep
+        if "is_rep" in change:
+            rep["is_rep"] = truthy(change.get("is_rep"))
+        if "segment" in change:
+            rep["segment"] = key_map.get(str(change.get("segment")), str(change.get("segment")))
+        if "in_balance" in change:
+            rep["in_balance"] = truthy(change.get("in_balance"))
+    valid = {s["key"] for s in segments}
+    for rep in reps:
+        seg = key_map.get(str(rep.get("segment") or ""), str(rep.get("segment") or ""))
+        if rep.get("is_rep") and seg not in valid:
+            if len(segments) == 1:
+                seg = segments[0]["key"]
+            else:
+                raise ValueError(f"{rep.get('name')} needs a segment")
+        rep["segment"] = seg
+        rep["effective_capacity"] = effective_capacity(rep, segments)
+
+    apply_roster(plan, rows)
+    recompute_segments(plan, rows)
+    counts = {s["key"]: 0 for s in segments}
+    for r in rows:
+        if str(r.get("account_category") or "") not in WHITESPACE_CATEGORIES:
+            counts[str(r.get("account_segment"))] = counts.get(str(r.get("account_segment")), 0) + 1
+    return {
+        "segments": counts,
+        "reps": sum(1 for r in reps if r.get("is_rep")),
+        "unallocated": sum(1 for r in rows if truthy(r.get("unallocated"))),
+    }
+
+
 def effective_owner(row: dict[str, Any]) -> str:
     """Who owns the account once the user's accepted/manual decisions are
     applied — what the balance maths must measure against."""
@@ -915,6 +1226,7 @@ def has_activity(rows: list[dict[str, Any]]) -> bool:
         + to_float(r.get("calls"))
         + to_float(r.get("emails_out"))
         + to_float(r.get("emails_in"))
+        + to_float(r.get("messages"))
         > 0
         for r in rows
     )

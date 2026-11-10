@@ -21,15 +21,15 @@ import json
 import math
 from pathlib import Path
 
-ENTERPRISE_MIN = 150  # sales_people >= this -> Enterprise
+ENTERPRISE_MIN = 1000  # total employees >= this -> Enterprise
 COMPANY = {"name": "Northwind", "url": "northwind.example", "folder_slug": "northwind"}
 COMPANY_DOMAIN = "northwind.example"
 
 # Target accounts per rep, by segment — the "Target accounts per rep" the
-# Calibrate panel shows. The quotas below are built to land every book inside
+# Segments panel shows. The quotas below are built to land every book inside
 # +-40% of these, so the target is a number a reviewer can actually hold the
-# demo to. The Enterprise line sits at 150 sales people (not 500) so the
-# Enterprise pool is deep enough for 10 reps to carry ~50 accounts each.
+# demo to. The Enterprise line sits at 1,000 employees, which leaves an
+# Enterprise pool deep enough for 10 reps to carry ~50 accounts each.
 SEGMENT_CAPACITY = {"commercial": 150, "enterprise": 50}
 
 ENTERPRISE_REPS = [
@@ -159,7 +159,7 @@ def main() -> None:
         oid = r["org_id"]
         sp = num(r.get("sales_people"))
         emp = num(r.get("employee_count_int"))
-        seg = "enterprise" if sp >= ENTERPRISE_MIN else "commercial"
+        seg = "enterprise" if emp >= ENTERPRISE_MIN else "commercial"
 
         # Synthetic ICP score: size-correlated + deterministic variety, 3-98.
         base = 30 + 9 * math.log10(sp + 1) + 5 * math.log10(emp + 1)
@@ -405,9 +405,9 @@ def main() -> None:
             },
         ],
         "boundary": {
-            "metric": "jf_people:Sales",
-            "column": "sales_people",
-            "label": "Sales headcount",
+            "metric": "total_employees",
+            "column": "employee_count_int",
+            "label": "Total employees",
             "thresholds": [{"segment": "enterprise", "min": ENTERPRISE_MIN}],
         },
         "activity": {

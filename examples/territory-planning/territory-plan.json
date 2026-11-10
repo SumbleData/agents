@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-10T10:39:13-08:00",
+  "generated_at": "2026-11-10T11:58:22-08:00",
   "company": {
     "name": "Northwind",
     "url": "northwind.example",
@@ -26,20 +26,20 @@
     }
   ],
   "boundary": {
-    "metric": "jf_people:Sales",
-    "column": "sales_people",
-    "label": "Sales headcount",
+    "metric": "total_employees",
+    "column": "employee_count_int",
+    "label": "Total employees",
     "thresholds": [
       {
         "segment": "enterprise",
-        "min": 150.0
+        "min": 1000.0
       }
     ],
     "options": [
       {
-        "metric": "jf_people:Sales",
-        "label": "Sales headcount",
-        "column": "sales_people"
+        "metric": "total_employees",
+        "label": "Total employees",
+        "column": "employee_count_int"
       },
       {
         "metric": "score",
@@ -47,9 +47,9 @@
         "column": "score"
       },
       {
-        "metric": "total_employees",
-        "label": "Total employees",
-        "column": "employee_count_int"
+        "metric": "jf_people:Sales",
+        "label": "Sales headcount",
+        "column": "sales_people"
       }
     ]
   },

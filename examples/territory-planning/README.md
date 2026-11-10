@@ -25,6 +25,8 @@ python3 app.py          # http://localhost:8002
   with **synthetic demo scores** — that dataset is already public in this repo.
 - **Deterministic:** everything is hash-seeded (no RNG), so the demo rebuilds
   byte-identically.
+- **Segments are cut by headcount:** Enterprise is 1,000 employees and up
+  (`ENTERPRISE_MIN` in `make_demo.py`).
 - **Books are sized to target.** Every rep is dealt a fixed quota, so all 20
   books land within **±40%** of their segment's target (Enterprise 50, so
   30–70; Commercial 150, so 90–210). `make_demo.py` fails the build if one
@@ -33,7 +35,7 @@ python3 app.py          # http://localhost:8002
 
 The seeded numbers tell a story on purpose: one enterprise rep (*Tom Harris*)
 holds the segment's biggest and strongest book but works almost none of it
-(**+0.66 on the top-50 distance, 10% of the top 50 worked**, sitting on value).
+(**+0.64 on the top-50 distance, 8% of the top 50 worked**, sitting on value).
 The foil (*James Walker*) works their whole book; one ramping rep (*Grace
 Mitchell*) sits at **0%**; and the commercial star (*Alex Morgan*) holds the
 strongest commercial book and works most of it. So the distance columns, the

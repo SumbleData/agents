@@ -353,20 +353,24 @@ Ask both halves in ONE message.
 default; don't make them invent it. They may rename, add (SMB, Mid-Market,
 Strategic), or drop to two. Store ordered **smallest → largest** via `order`.
 
-**(b) What decides which segment an account belongs to?** Offer these options
-and record the answer as `boundary.metric`:
+**(b) What decides which segment an account belongs to?** Propose **headcount
+(total employees)** as the default, first in the list and marked recommended:
+it's the cut most sales teams already use, Sumble has it for every account
+(whitespace included), and a line like "Enterprise is 1,000+ employees" is one
+a sales leader can defend. Offer these options and record the answer as
+`boundary.metric`:
 
 | Option | `metric` | Where the value comes from |
 |---|---|---|
+| **Headcount (total employees)** (recommended) | `total_employees` | Sumble. Already in `score.csv`; Path B fetches it. |
 | **Account score**: the best-fit accounts go to the top segment | `score` | The account-scoring `score.csv` (Path A) or `sumble_score` (Path B). Nothing extra to fetch. |
-| **Headcount (total employees)** | `total_employees` | Sumble. Already in `score.csv`; Path B fetches it. |
 | **Headcount in one job function** (e.g. Engineering, Sales) | `jf_people:{Function}` | Sumble. See the job-function rules in Q3b. |
 | **Revenue** | `revenue` | **The CRM, not Sumble** (Sumble has no revenue data). Salesforce `Account.AnnualRevenue`, HubSpot `annualrevenue`. Pull it into a `revenue` column of `ownership.csv` in Q4. |
 | **Another numeric CRM field** (a tier score, ARR, seat count) | `crm:{column}` | A column of that name in `ownership.csv`. |
 | **A column already in `score.csv`** | `custom:{column}` | That column verbatim. |
 
 The interactive question widget only fits four options, so offer the first four
-(score, total employees, job-function headcount, revenue) and let "Other" cover
+(total employees, score, job-function headcount, revenue) and let "Other" cover
 the CRM field and `score.csv` column cases.
 
 Say the consequence of each choice in one line when it matters:

@@ -26,7 +26,7 @@ Rank every account in the segment by ICP score, 1 = best. Now take one rep and a
 
 If the rep was dealt the same mix as their peers, the two lines sit on top of each other. If they were dealt the segment's best accounts, their line climbs faster. The **Kolmogorov-Smirnov distance** is the widest vertical gap between the two lines, signed: positive when the rep's book is stronger, negative when it's weaker. It runs from −1 to +1. Under 0.1 is even. 0.1 to 0.25 is worth a look. Above 0.25 is a real difference.
 
-The app shows it two ways. **Top N** compares each rep's best N accounts, where N is the segment's target book size. **All accounts** compares whole books. Click a rep and you get the chart, both lines drawn and the gap marked, above their accounts.
+The app reads it on each rep's **top N**: their best N accounts, where N is the segment's target book size. Click a rep and you get the chart, both lines drawn and the gap marked, above their accounts. The whole-book reading is in the rep's header if you want it.
 
 ### Why KS and not something simpler
 
@@ -38,7 +38,7 @@ The obvious alternatives each break in a way that matters for territories.
 
 **Raw scores are fragile; ranks aren't.** KS works on ranks within the segment. Recalibrate the score model so that 70 becomes 85 but the order holds, and the distance doesn't move. One freak account with a score of 99 can't drag a book's number around the way it drags an average.
 
-**Book size stays out of it.** The all-accounts reading compares the mix, so a rep with 30 accounts and a rep with 300 can both read 0. That keeps quantity in its own column instead of leaking into the quality number. The top-N reading handles the opposite problem: it compares each rep's best N, so a giant book can't look strong just by carrying more names, and a book with fewer than N accounts counts its empty slots as empty.
+**Book size is handled on purpose.** Every rep is read on the same N slots. A giant book can't look strong just by carrying more names past N, and a book with fewer than N accounts counts its empty slots as empty, because a thin book really is less opportunity.
 
 **It knows when a gap is noise.** KS comes with a p-value. A ramping rep with eight accounts can look lopsided by luck alone, and a reading with p ≥ 0.05 is greyed out instead of flagged. Most territory dashboards can't tell a real imbalance from a small sample, so people learn to ignore them.
 
@@ -85,14 +85,16 @@ The proposals land on the **Changes** tab. Accept one, reject it, or pick a diff
 
 The repo ships a runnable demo at [`examples/territory-planning/`](../../../examples/territory-planning): a fictitious vendor, *Northwind*, with 1,935 accounts and 20 reps (10 Enterprise, 10 Commercial). The data is synthetic, but it's built to show the shapes you'll recognize:
 
-- **Tom Harris** holds the biggest Enterprise book and the strongest one, **+0.66** on the top 50, and works almost none of it: 10% of his top 50 have been touched. The sitting-on-value quadrant, invisible to an account count.
-- **Marcus Bell** is the other end: a normal-sized Enterprise book that skews clearly weaker than his peers', **−0.24** on the top 50 (p = 0.009).
-- **James Walker** is the foil: a smaller book, all of it worked.
-- **Grace Mitchell** shows why the top-N reading exists. Her 28 accounts look stronger than her peers' as a mix (+0.19, within noise), but she has 22 empty slots in a 50-account book, and on the top 50 she reads **−0.17**. She's ramping, and 0% worked reads as "new," not "failing."
-- **Alex Morgan** is the commercial star: the biggest book, the strongest top 150 (**+0.62**), and 83% of it worked.
-- **Commercial's Unallocated row** reads **−0.32** across all 428 accounts (mostly long tail) but **+0.60** on its best 150. There's a cluster of strong accounts in there that nobody owns. An average would have told you the pool was weak and stopped.
+Segments are cut by headcount: Enterprise is 1,000 employees and up.
 
-Under the current settings the balancer makes 480 proposals (owners for 445 unallocated accounts, 18 wrong-segment handbacks, 17 rebalance moves), which together would take both segments from uneven (CV ≈ 0.3) to balanced (≈ 0.1) if every one were accepted. Which, of course, they shouldn't be blindly. That's what the review step is for.
+- **Tom Harris** holds the biggest Enterprise book and the strongest one, **+0.64** on the top 50, and works almost none of it: 8% of his top 50 have been touched. The sitting-on-value quadrant, invisible to an account count.
+- **Marcus Bell** is the other end: a normal-sized Enterprise book that skews clearly weaker than his peers', **−0.23** on the top 50 (p = 0.012).
+- **James Walker** is the foil: a smaller book, all of his top 50 worked.
+- **Grace Mitchell** is ramping. Her 30 accounts leave 20 empty slots in a 50-account book, she reads **−0.14** (greyed: within noise), and 0% worked reads as "new," not "failing."
+- **Alex Morgan** is the commercial star: the biggest book, the strongest top 150 (**+0.62**), and 81% of it worked.
+- **Commercial's Unallocated row** reads **+0.64** on its best 150. There's a cluster of strong accounts in there that nobody owns, sitting in a pool of 418 that is mostly long tail.
+
+Under the current settings the balancer makes 475 proposals (owners for 445 unallocated accounts, 15 wrong-segment handbacks, 15 rebalance moves), which together would take both segments from uneven (CV ≈ 0.3) to balanced (≈ 0.1) if every one were accepted. Which, of course, they shouldn't be blindly. That's what the review step is for.
 
 ```bash
 cd examples/territory-planning
